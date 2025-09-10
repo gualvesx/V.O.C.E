@@ -7,7 +7,10 @@
       "tabs",          
       "activeTab",     
       "storage",       
-      "alarms"      
+      "alarms",
+      "identity",         
+      "identity.email",
+      "nativeMessaging"      
     ],
     "host_permissions": [
       "http://localhost:3000/*" 

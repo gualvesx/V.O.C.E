@@ -2,6 +2,7 @@
 
 // Usaremos um objeto para rastrear o tempo de início de cada aba
 let activeTabs = {};
+let userId = 'carregando...';
 // Onde guardaremos os dados antes de enviar
 let dataBuffer = [];
 // URL do nosso backend
@@ -43,11 +44,12 @@ function recordTime(tabId, url) {
     // Apenas registra se o tempo for significativo (ex: > 5 segundos)
     if (durationSeconds > 5) {
       dataBuffer.push({
+        aluno_id: userId, // <-- USANDO O EMAIL
         url: domain,
         durationSeconds: durationSeconds,
         timestamp: new Date().toISOString()
       });
-      console.log(`Tempo registrado para ${domain}: ${durationSeconds}s`);
+      console.log(`[${userId}] Tempo para ${domain}: ${durationSeconds}s`);
     }
   }
 }
@@ -91,4 +93,14 @@ chrome.alarms.onAlarm.addListener(alarm => {
   if (alarm.name === 'sendData') {
     sendDataToServer();
   }
+});
+
+// Pega a informação do usuário quando a extensão inicia
+chrome.identity.getProfileUserInfo((userInfo) => {
+  if (userInfo && userInfo.email) {
+    userId = userInfo.email;
+  } else {
+    userId = 'email_nao_disponivel';
+  }
+  console.log('Usuário identificado como:', userId);
 });
