@@ -11,7 +11,7 @@ app.use(cors()); // Habilita o CORS para que a extensão possa se comunicar
 app.use(express.json()); // Permite que o servidor entenda JSON
 
 // A URL que o Power BI vai te fornecer na próxima etapa
-const POWER_BI_PUSH_URL = 'https://api.powerbi.com/beta/b1051c4b-3b94-41ab-9441-e73a72342fdd/datasets/760cf8c9-9b1b-4a59-b362-71e0201de952/rows?experience=power-bi&key=AzCvYQQbKdncdlAhd8aJ4la2ptudbNQWyZdu%2Fsr97E%2B%2FxCS2g%2BY%2BfrauIESWciTnQsX8aEMDwDRYbY2BBGOwsw%3D%3D';
+const POWER_BI_PUSH_URL = 'https://api.powerbi.com/beta/b1051c4b-3b94-41ab-9441-e73a72342fdd/datasets/020fa4f0-cb12-42c3-8727-d4fb58018dc5/rows?experience=power-bi&key=Z3Y1AB0B0wAAfd7W0ywCAMH38nnjQiRtfh4bqE%2Fz7m%2BfAoguSu1g3BPI0iLGcTf7%2FInapK9eeHxJ3O4dP3qg3A%3D%3D';
 
 // Rota para receber os dados da extensão
 app.post('/api/data', async (req, res) => {
