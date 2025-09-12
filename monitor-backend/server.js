@@ -1,8 +1,10 @@
-// server.js (ATUALIZADO COM IA)
+// server.js (VERSÃO CORRIGIDA)
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
-const IA = require('./ia_classifier.js'); // Importa nosso novo módulo
+
+// 👇 [CORREÇÃO 1] Garantindo que estamos importando o classificador para a variável 'classifier'
+const classifier = require('./python_classifier.js');
 
 const app = express();
 const port = 3000;
@@ -10,29 +12,25 @@ const port = 3000;
 app.use(cors());
 app.use(express.json());
 
-const POWER_BI_PUSH_URL = 'https://api.powerbi.com/beta/b1051c4b-3b94-41ab-9441-e73a72342fdd/datasets/020fa4f0-cb12-42c3-8727-d4fb58018dc5/rows?experience=power-bi&key=Z3Y1AB0B0wAAfd7W0ywCAMH38nnjQiRtfh4bqE%2Fz7m%2BfAoguSu1g3BPI0iLGcTf7%2FInapK9eeHxJ3O4dP3qg3A%3D%3D';
+const POWER_BI_PUSH_URL = 'https://api.powerbi.com/beta/b1051c4b-3b94-41ab-9441-e73a72342fdd/datasets/020fa4f0-cb12-42c3-8727-d4fb58018dc5/rows?experience=power-bi&key=Z3Y1AB0B0wAAfd7W0ywCAMH38nnjQiRtfh4bqE%2Fz7m%2BfAoguSu1g3BPI0iLGcTf7%2FInapK9eeHxJ3O4dP3qg3A%3D%3D'; // Lembre-se de colocar sua URL aqui
 
 app.post('/api/data', async (req, res) => {
   const dataFromExtension = req.body;
   console.log('Dados brutos recebidos:', dataFromExtension);
 
   try {
-    // --- LÓGICA DE CLASSIFICAÇÃO COM IA ---
-    // Cria uma lista de "promessas", uma para cada log a ser categorizado
-    const classificationPromises = dataFromExtension.map(log => IA.categorizar(log.url));
-
-    // Espera todas as chamadas à IA terminarem
+    // 👇 [CORREÇÃO 2] Usando a variável correta 'classifier' em vez de 'IA'
+    const classificationPromises = dataFromExtension.map(log => classifier.categorizar(log.url));
     const categories = await Promise.all(classificationPromises);
-
-    // Combina os dados originais com as categorias recebidas da IA
+    
     const enrichedData = dataFromExtension.map((log, index) => ({
       ...log,
-      categoria: categories[index] // Adiciona o novo campo "categoria"
+      categoria: categories[index]
     }));
-    // ------------------------------------
+    
+    console.log('Dados enriquecidos com classificador:', enrichedData);
 
-    console.log('Dados enriquecidos com IA:', enrichedData);
-
+    // Lembre-se de recriar seu Dataset no Power BI para incluir o campo 'categoria'
     const responseBI = await fetch(POWER_BI_PUSH_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
