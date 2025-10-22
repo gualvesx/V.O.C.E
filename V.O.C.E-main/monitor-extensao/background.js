@@ -4,7 +4,7 @@
 let activeTabs = {};
 let dataBuffer = [];
 // [CORREÇÃO] Garante que a URL está correta para o servidor do Firebase
-const BACKEND_URL = 'http://localhost:8080/api/logs'; 
+const BACKEND_URL = 'http://10.111.9.66:8081/api/logs'; 
 const nativeHostName = 'com.meutcc.monitor';
 let osUsername = 'carregando...';
 
