@@ -311,8 +311,8 @@ function updateLogsTable(logs) {
     if (!tableBody || !logsCount) return;
 
     logsCount.textContent = logs.length;
-    tableBody.innerHTML = '';
-    
+    tableBody.innerHTML = ''; // Limpa a tabela
+
     const startIndex = (state.logsCurrentPage - 1) * state.logsPerPage;
     const endIndex = startIndex + state.logsPerPage;
     const paginatedLogs = logs.slice(startIndex, endIndex);
@@ -322,27 +322,62 @@ function updateLogsTable(logs) {
         renderPaginationControls(logs.length);
         return;
     }
+
     const fragment = document.createDocumentFragment();
+    // Prepara a lista de categorias disponíveis UMA VEZ fora do loop
+    const availableCategories = [...new Set(['Não Categorizado', ...(state.categories || [])])].sort();
+
     paginatedLogs.forEach(log => {
         const row = document.createElement('tr');
-        const isRedAlert = ['Rede Social', 'Streaming & Jogos'].includes(log.categoria);
-        const isBlueAlert = log.categoria === 'IA';
+        const currentCategory = log.categoria || 'Não Categorizado'; // Categoria final (com override já aplicado pelo backend)
+        const isRedAlert = ['Rede Social', 'Streaming & Jogos'].includes(currentCategory);
+        const isBlueAlert = currentCategory === 'IA';
 
+        // Aplica highlighting baseado na CATEGORIA FINAL recebida
         if (isRedAlert) {
             row.className = 'bg-red-50 text-red-800 font-medium';
         } else if (isBlueAlert) {
             row.className = 'bg-blue-50 text-blue-800 font-medium';
         }
 
+        // Gera o HTML da linha, incluindo o <select> VAZIO por enquanto
         row.innerHTML = `
             <td class="px-6 py-4 whitespace-nowrap text-sm">${log.student_name || `<i>${log.aluno_id}</i>`}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm"><a href="http://${log.url}" target="_blank" class="text-blue-600 hover:underline">${log.url}</a></td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm">${log.duration}s</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm">${log.categoria || 'N/A'}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm">${new Date(log.timestamp).toLocaleString('pt-BR')}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm">
+                <a href="http://${log.url}" target="_blank" class="text-blue-600 hover:underline">${log.url || 'N/A'}</a>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm">${log.duration || 0}s</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm category-cell">
+                <span class="category-edit-modal-trigger cursor-pointer hover:underline text-blue-600"
+                      title="Clique para alterar a categoria de ${log.url || ''}"
+                      data-url="${log.url || ''}"
+                      data-current-category="${log.categoria || 'Não Categorizado'}">
+                    ${log.categoria || 'Não Categorizado'}
+                </span>
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm">${log.timestamp ? new Date(log.timestamp).toLocaleString('pt-BR') : 'N/A'}</td>
         `;
-        fragment.appendChild(row);
-    });
+
+        // Encontra o <select> que acabamos de criar DENTRO da linha atual
+        const selectElement = row.querySelector('select.category-select');
+
+        // *** ADICIONA AS OPÇÕES AO SELECT ***
+        if (selectElement) {
+            availableCategories.forEach(category => {
+                const option = document.createElement('option');
+                option.value = category;
+                option.textContent = category;
+                if (category === currentCategory) {
+                    option.selected = true; // Marca a opção atual como selecionada
+                }
+                selectElement.appendChild(option);
+            });
+        }
+        // *** FIM DA ADIÇÃO DAS OPÇÕES ***
+
+        fragment.appendChild(row); // Adiciona a linha completa ao fragmento
+    }); // Fim do forEach(log => ...)
+
     tableBody.appendChild(fragment);
     renderPaginationControls(logs.length);
 }
@@ -358,6 +393,8 @@ function updateUserSummaryTable(users) {
     const fragment = document.createDocumentFragment();
     users.forEach(user => {
         const row = document.createElement('tr');
+        row.dataset.alunoId = user.aluno_id; 
+        row.classList.add('cursor-pointer', 'hover:bg-gray-50', 'summary-row');
         
         let statusHTML = '<span class="text-green-500 text-xl">✅</span>';
         if (user.has_red_alert || user.has_blue_alert) {
@@ -371,14 +408,14 @@ function updateUserSummaryTable(users) {
         }
 
         row.innerHTML = `
-            <td class="px-6 py-4 whitespace-nowrap text-sm">${statusHTML}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${user.student_name || `<i>${user.aluno_id}</i>`}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm">${user.aluno_id}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm">${(user.total_duration / 60).toFixed(1)}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm">${user.log_count}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm">${new Date(user.last_activity).toLocaleString('pt-BR')}</td>
-        `;
-        fragment.appendChild(row);
+        <td class="px-6 py-4 whitespace-nowrap text-sm">${statusHTML}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${user.student_name || `<i>${user.aluno_id}</i>`}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm">${user.aluno_id}</td> 
+        <td class="px-6 py-4 whitespace-nowrap text-sm">${(user.total_duration / 60).toFixed(1)}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm">${user.log_count}</td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm">${user.last_activity ? new Date(user.last_activity).toLocaleString('pt-BR') : 'N/A'}</td>
+    `;
+    fragment.appendChild(row);
     });
     tableBody.appendChild(fragment);
 }
@@ -386,25 +423,153 @@ function updateUserSummaryTable(users) {
 function updateChart(logs) {
     const chartCanvas = document.getElementById('mainChart');
     if (!chartCanvas) return;
-    if (state.mainChartInstance) state.mainChartInstance.destroy();
+    
+    // Destrói a instância anterior do gráfico, se existir
+    if (state.mainChartInstance) {
+        state.mainChartInstance.destroy();
+    }
+
+    // Calcula o uso por site (lógica existente)
     const siteUsage = logs.reduce((acc, log) => {
-        acc[log.url] = (acc[log.url] || 0) + log.duration;
+        // Garante que temos uma URL válida
+        if (log.url) { 
+            acc[log.url] = (acc[log.url] || 0) + log.duration;
+        }
         return acc;
     }, {});
+
+    // Pega os top 10 sites (lógica existente)
     const topSites = Object.entries(siteUsage).sort(([, a], [, b]) => b - a).slice(0, 10);
     const chartLabels = topSites.map(site => site[0]);
     const chartData = topSites.map(site => site[1]);
-    const backgroundColors = ['rgba(220, 38, 38, 0.7)', 'rgba(153, 27, 27, 0.7)', 'rgba(239, 68, 68, 0.7)', 'rgba(248, 113, 113, 0.7)', 'rgba(252, 165, 165, 0.7)'];
+    const backgroundColors = ['rgba(220, 38, 38, 0.7)', 'rgba(153, 27, 27, 0.7)', 'rgba(239, 68, 68, 0.7)', 'rgba(248, 113, 113, 0.7)', 'rgba(252, 165, 165, 0.7)']; // Cores exemplo
+
+    // Cria a nova instância do gráfico com a opção onClick
     state.mainChartInstance = new Chart(chartCanvas.getContext('2d'), {
         type: state.currentChartType,
         data: {
             labels: chartLabels.length > 0 ? chartLabels : ['Nenhum dado para exibir'],
-            datasets: [{ label: 'Tempo de Uso (s)', data: chartData.length > 0 ? chartData : [], backgroundColor: backgroundColors }]
+            datasets: [{ 
+                label: 'Tempo de Uso (s)', 
+                data: chartData.length > 0 ? chartData : [0], // Adiciona [0] se vazio para evitar erros
+                backgroundColor: backgroundColors 
+            }]
         },
-        options: { indexAxis: state.currentChartType === 'bar' ? 'y' : 'x', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: state.currentChartType !== 'bar' } } }
+        options: {
+            indexAxis: state.currentChartType === 'bar' ? 'y' : 'x', // Eixo Y para barras horizontais
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { 
+                    display: state.currentChartType !== 'bar' // Esconde legenda para gráfico de barras
+                },
+                tooltip: {
+                     callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            if (label) {
+                                label += ': ';
+                            }
+                            if (context.parsed !== null) {
+                                // Mostra em minutos no tooltip
+                                label += (context.parsed / 60).toFixed(1) + ' min'; 
+                            }
+                            return label;
+                        }
+                    }
+                }
+            },
+            // --- NOVA OPÇÃO onClick ADICIONADA AQUI ---
+            onClick: (event, activeElements, chart) => {
+                if (activeElements.length > 0) {
+                    // Pega o índice do elemento clicado (barra, fatia, etc.)
+                    const dataIndex = activeElements[0].index;
+                    // Pega o label (URL) correspondente a esse índice
+                    const clickedUrl = chart.data.labels[dataIndex];
+
+                    // Verifica se realmente clicou em um dado válido
+                    if (clickedUrl && clickedUrl !== 'Nenhum dado para exibir') {
+                        console.log(`Gráfico clicado: ${clickedUrl}`); // Log para depuração
+
+                        const searchInput = document.getElementById('search-input');
+                        if (searchInput) {
+                            // 1. Preenche o campo de busca com a URL clicada
+                            searchInput.value = clickedUrl;
+                            
+                            // 2. Atualiza o estado do filtro
+                            state.currentFilters.search = clickedUrl;
+                            
+                            // 3. Reseta a paginação dos logs
+                            state.logsCurrentPage = 1;
+                            
+                            // 4. Aplica os filtros para atualizar as tabelas
+                            applyFiltersAndRender();
+
+                            // 5. Opcional: Rola a página para a tabela de logs
+                            const logsSection = document.getElementById('logsTableBody')?.closest('section');
+                            if (logsSection) {
+                                logsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }
+                        }
+                    }
+                }
+            }
+            // --- FIM DA NOVA OPÇÃO onClick ---
+        }
     });
 }
 
+
+let currentlyEditingUrl = null; // Variável para guardar a URL sendo editada
+
+function openCategoryModal(url, currentCategory) {
+    const modal = document.getElementById('categoryEditModal');
+    const urlDisplay = document.getElementById('modalUrlDisplay');
+    const categoryListDiv = document.getElementById('modalCategoryList');
+
+    if (!modal || !urlDisplay || !categoryListDiv) {
+        console.error("Elementos do modal de categoria não encontrados!");
+        return;
+    }
+
+    currentlyEditingUrl = url; // Guarda a URL
+    urlDisplay.textContent = url; // Mostra a URL no modal
+    categoryListDiv.innerHTML = ''; // Limpa a lista anterior
+
+    // Prepara as opções de categoria
+    const availableCategories = [...new Set(['Não Categorizado', ...(state.categories || [])])].sort();
+
+    // Cria os radio buttons
+    availableCategories.forEach(category => {
+        const label = document.createElement('label');
+        label.className = "flex items-center p-2 rounded hover:bg-gray-100 cursor-pointer";
+        const input = document.createElement('input');
+        input.type = 'radio';
+        input.name = 'modalCategoryOption';
+        input.value = category;
+        input.className = "form-radio h-4 w-4 text-red-600 focus:ring-red-500";
+        if (category === currentCategory) {
+            input.checked = true; // Marca a categoria atual
+        }
+        const span = document.createElement('span');
+        span.className = "ml-3 text-sm text-gray-800";
+        span.textContent = category;
+
+        label.appendChild(input);
+        label.appendChild(span);
+        categoryListDiv.appendChild(label);
+    });
+
+    modal.classList.remove('hidden'); // Mostra o modal
+}
+
+function closeCategoryModal() {
+    const modal = document.getElementById('categoryEditModal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+    currentlyEditingUrl = null; // Limpa a URL em edição
+}
 
 // --- FUNÇÕES DE API ---
 async function apiCall(url, method = 'GET', body = null) {
@@ -599,8 +764,24 @@ async function handleClassSelection(selectedId, selectedName) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+
+    const categorySelect = document.getElementById('category-select');
+    if (categorySelect) {
+        state.categories = Array.from(categorySelect.options) // Pega todas as options
+                              .map(option => option.value)     // Pega o valor de cada uma
+                              .filter(value => value !== '');   // Remove a opção "Todas" (valor vazio)
+        console.log('Categorias carregadas para o estado:', state.categories); // Log para verificar
+    } else {
+        state.categories = []; // Define como vazio se o select não for encontrado
+        console.warn('Select de categorias #category-select não encontrado.');
+    }
+    // --- FIM DA NOVA SEÇÃO ---
+
+
     await fetchAllStudents();
     await fetchDataPanels();
+
+    
 
     const studentManagementPanel = document.getElementById('student-management-panel');
     if (studentManagementPanel) {
@@ -727,6 +908,95 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
 
+        const logsTableBody = document.getElementById('logsTableBody');
+        if (logsTableBody) {
+            // Listener para abrir o modal ao clicar na categoria
+            logsTableBody.addEventListener('click', (e) => {
+                const categoryTrigger = e.target.closest('.category-edit-modal-trigger');
+                if (categoryTrigger) {
+                    const url = categoryTrigger.dataset.url;
+                    const currentCategory = categoryTrigger.dataset.currentCategory;
+                    console.log(`Abrindo modal para: URL=${url}, Categoria Atual=${currentCategory}`); // Log
+                    openCategoryModal(url, currentCategory);
+                }
+            });
+        }
+    
+        // Listeners para os botões DENTRO do modal (adicione também no DOMContentLoaded)
+        const confirmCategoryBtn = document.getElementById('confirmCategoryChangeBtn');
+        const cancelCategoryBtn = document.getElementById('cancelCategoryChangeBtn');
+        const closeCategoryModalBtn = document.getElementById('closeCategoryModalBtn');
+    
+        if (confirmCategoryBtn) {
+            confirmCategoryBtn.addEventListener('click', async () => {
+                const selectedRadio = document.querySelector('input[name="modalCategoryOption"]:checked');
+                if (!selectedRadio) {
+                    Swal.fire('Atenção!', 'Por favor, selecione uma categoria.', 'warning');
+                    return;
+                }
+                const newCategory = selectedRadio.value;
+                const url = currentlyEditingUrl; // Pega a URL que foi guardada
+    
+                if (!url) {
+                    console.error("Erro: URL não definida ao confirmar categoria.");
+                    closeCategoryModal();
+                    return;
+                }
+    
+                // Pega a categoria original diretamente do trigger na tabela (se necessário para comparação)
+                const triggerSpan = logsTableBody.querySelector(`span[data-url="${url}"].category-edit-modal-trigger`);
+                const originalCategory = triggerSpan ? triggerSpan.dataset.currentCategory : 'Não Categorizado';
+    
+                if (newCategory !== originalCategory) {
+                    try {
+                        Swal.showLoading();
+                        const result = await apiCall('/api/override-category', 'POST', {
+                            url: url,
+                            newCategory: newCategory
+                        });
+                        await Swal.fire('Sucesso!', result.message, 'success');
+    
+                        // Atualiza a UI - encontra TODOS os spans para essa URL
+                        document.querySelectorAll(`span[data-url="${url}"].category-edit-modal-trigger`).forEach(span => {
+                             span.textContent = newCategory;
+                             span.dataset.currentCategory = newCategory;
+                             // Atualiza classes de alerta na linha
+                             const row = span.closest('tr');
+                             if (row) {
+                                row.classList.remove('bg-red-50', 'text-red-800', 'bg-blue-50', 'text-blue-800', 'font-medium');
+                                const isRedAlert = ['Rede Social', 'Streaming & Jogos'].includes(newCategory);
+                                const isBlueAlert = newCategory === 'IA';
+                                if (isRedAlert) row.classList.add('bg-red-50', 'text-red-800', 'font-medium');
+                                if (isBlueAlert) row.classList.add('bg-blue-50', 'text-blue-800', 'font-medium');
+                             }
+                        });
+                        closeCategoryModal();
+    
+                    } catch (error) {
+                        Swal.fire('Erro!', error.message || 'Não foi possível salvar a categoria.', 'error');
+                        closeCategoryModal(); // Fecha mesmo com erro
+                    }
+                } else {
+                     Swal.fire({ title: 'Nenhuma alteração', text: 'Você selecionou a mesma categoria.', icon: 'info', timer: 1500, showConfirmButton: false });
+                     closeCategoryModal();
+                }
+            });
+        }
+    
+        // Adiciona listeners para fechar o modal
+        if (cancelCategoryBtn) cancelCategoryBtn.addEventListener('click', closeCategoryModal);
+        if (closeCategoryModalBtn) closeCategoryModalBtn.addEventListener('click', closeCategoryModal);
+    
+        // Fecha o modal se clicar fora da área de conteúdo (no overlay)
+        const categoryModal = document.getElementById('categoryEditModal');
+        if (categoryModal) {
+            categoryModal.addEventListener('click', (e) => {
+                 if (e.target === categoryModal) { // Verifica se o clique foi no próprio overlay
+                     closeCategoryModal();
+                 }
+            });
+        }
+
         classStudentsList.addEventListener('click', async (e) => {
             if (e.target.classList.contains('btn-remove-student')) {
                 const studentId = e.target.dataset.studentId;
@@ -849,6 +1119,41 @@ document.addEventListener('DOMContentLoaded', async () => {
             handleClassSelection(e.target.value, selectedOption.text);
         });
     }
+
+    const usersTableBody = document.getElementById('usersTableBody');
+    const searchInput = document.getElementById('search-input'); // Campo de busca principal
+
+    if (usersTableBody && searchInput) {
+        usersTableBody.addEventListener('click', (e) => {
+            // Encontra a linha (TR) clicada, mesmo que o clique seja numa célula (TD)
+            const clickedRow = e.target.closest('tr.summary-row'); 
+            
+            // Verifica se o clique foi realmente numa linha e NÃO num botão de alerta dentro dela
+            if (clickedRow && !e.target.closest('.alert-btn')) { 
+                const alunoId = clickedRow.dataset.alunoId;
+
+                if (alunoId) {
+                    // 1. Coloca o ID do aluno no campo de busca principal
+                    searchInput.value = alunoId;
+
+                    // 2. Atualiza o estado dos filtros (opcional, mas bom para consistência)
+                    state.currentFilters.search = alunoId;
+                    
+                    // 3. Reseta a paginação dos logs para a primeira página
+                    state.logsCurrentPage = 1; 
+
+                    // 4. Aplica os filtros e re-renderiza tudo
+                    applyFiltersAndRender(); 
+
+                    // Opcional: Rolar a página para a tabela de logs
+                    // const logsSection = document.getElementById('logsTableBody'); // Ou a seção que contém a tabela
+                    // if (logsSection) {
+                    //     logsSection.scrollIntoView({ behavior: 'smooth' });
+                    // }
+                }
+            }
+        });
+    }
 });
 
         // Adicione este script no final do seu arquivo dashboard.ejs, antes do fechamento do </body>
@@ -870,10 +1175,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     errorDiv.textContent = 'Por favor, selecione uma data.';
                     return;
                 }
-    
-                // A mágica acontece aqui: o navegador é redirecionado para a URL da API.
-                // Como a API responde com os cabeçalhos de download, o arquivo será baixado
-                // em vez de a página ser redirecionada.
                 window.location.href = `/api/download-report/${selectedDate}`;
             });
+
         });
