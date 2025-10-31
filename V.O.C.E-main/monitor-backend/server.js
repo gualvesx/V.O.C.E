@@ -21,7 +21,10 @@ const port = process.env.PORT || 3000;
 app.set('view engine', 'ejs');
 app.set('views', path.resolve(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(cors);
+app.use(cors({
+    origin: '*', // Permite qualquer origem (Para testes é OK, para produção, defina o domínio específico)
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

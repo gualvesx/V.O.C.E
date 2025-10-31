@@ -10,7 +10,8 @@
     "nativeMessaging"
   ],
   "host_permissions": [
-    "http://localhost:8080/*",
+    "http://10.111.9.63:8081/*",
+    "http://localhost:8081/*",
     "http://localhost:3000/*"
   ],
   "background": {
