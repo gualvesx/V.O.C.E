@@ -3,7 +3,7 @@
 let activeTabs = {};
 let dataBuffer = [];
 // [ALTERADO] A URL do backend agora aponta para a nova rota de logs
-const BACKEND_URL = 'http://localhost:8080/api/logs'; 
+const BACKEND_URL = 'http://10.111.9.63:8081/api/logs'; 
 let identifier = 'nao_configurado'; // Valor padrão
 
 const storage = browser.storage.local;

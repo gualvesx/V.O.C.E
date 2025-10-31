@@ -11,6 +11,7 @@
   ],
 
   "host_permissions": [
+    "http://10.111.9.63:8081/*",
     "http://localhost:8080/*",
     "http://localhost:3000/*"
   ],

@@ -153,6 +153,80 @@ function closeAlertLogsModal() {
     document.getElementById('alertLogsModal')?.classList.add('hidden');
 }
 
+// VARIÁVEL GLOBAL PARA ACOMPANHAR O PASSO ATUAL
+let currentTourStep = 1;
+const totalTourSteps = 3;
+
+// --- Funções Principais do Modal de Tutorial ---
+
+function openTutorialModal() {
+    const tutorialModal = document.getElementById('tutorialModal');
+    if (tutorialModal) {
+        // Exibe o modal
+        tutorialModal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden'; // Evita a rolagem da página de fundo
+        
+        // Reinicia o tour para o Passo 1
+        currentTourStep = 1;
+        updateTourDisplay();
+    }
+}
+
+function closeTutorialModal() {
+    const tutorialModal = document.getElementById('tutorialModal');
+    if (tutorialModal) {
+        // Oculta o modal
+        tutorialModal.classList.add('hidden');
+        document.body.style.overflow = ''; // Restaura a rolagem
+    }
+}
+
+// --- Funções de Navegação do Tour ---
+
+function nextStep() {
+    if (currentTourStep < totalTourSteps) {
+        currentTourStep++;
+        updateTourDisplay();
+    }
+}
+
+function prevStep() {
+    if (currentTourStep > 1) {
+        currentTourStep--;
+        updateTourDisplay();
+    }
+}
+
+function updateTourDisplay() {
+    // 1. Oculta todos os passos
+    document.querySelectorAll('.tour-step').forEach(step => {
+        step.classList.add('hidden');
+    });
+
+    // 2. Exibe o passo atual
+    const currentStepElement = document.getElementById(`step-${currentTourStep}`);
+    if (currentStepElement) {
+        currentStepElement.classList.remove('hidden');
+    }
+
+    // 3. Atualiza o contador de passos
+    document.getElementById('currentStep').textContent = currentTourStep;
+
+    // 4. Lógica de visibilidade dos botões
+    const prevBtn = document.getElementById('prevStepBtn');
+    const nextBtn = document.getElementById('nextStepBtn');
+    const finishBtn = document.getElementById('finishTourBtn');
+
+    // Botão Voltar (aparece a partir do passo 2)
+    prevBtn.classList.toggle('hidden', currentTourStep === 1);
+
+    // Botão Próximo (oculta no último passo)
+    nextBtn.classList.toggle('hidden', currentTourStep === totalTourSteps);
+
+    // Botão Finalizar (aparece no último passo)
+    finishBtn.classList.toggle('hidden', currentTourStep !== totalTourSteps);
+}
+
 function openCategoryModal(url, currentCategory) {
     const modal = document.getElementById('categoryEditModal');
     const urlDisplay = document.getElementById('modalUrlDisplay');

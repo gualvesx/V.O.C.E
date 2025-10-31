@@ -4,7 +4,7 @@
   "main": "server.js",
   "scripts": {
     "start": "nodemon server.js",
-    "dev": "npm run tailwind-watch & nodemon server.js",
+    "dev": "concurrently \"npm run tailwind-watch\" \"nodemon server.js\"",
     "tailwind-init": "tailwindcss init",
     "tailwind-build": "tailwindcss -i ./public/css/input.css -o ./public/css/style.css",
     "tailwind-watch": "tailwindcss -i ./public/css/input.css -o ./public/css/style.css --watch",
@@ -30,6 +30,7 @@
     "pdfkit": "^0.17.2"
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "tailwindcss": "^3.4.0"
   },
   "author": "",

@@ -15,7 +15,7 @@ const crypto = require('crypto'); // Para tokens seguros
 const classifier = require('./python_classifier.js');
 
 const app = express();
-const port = process.env.PORT || 8080;
+const port = process.env.PORT || 8081;
 
 // ================================================================
 //                  CONFIGURAÇÃO DO EXPRESS
@@ -25,7 +25,10 @@ app.set('views', path.resolve(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(cors()); // Permite requisições de qualquer origem
+app.use(cors({
+    origin: '*', // Permite qualquer origem (Para testes é OK, para produção, defina o domínio específico)
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+}));// Permite requisições de qualquer origem
 
 // --- CONFIGURAÇÃO DA SESSÃO ---
 app.use(session({
