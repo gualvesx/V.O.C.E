@@ -1,0 +1,137 @@
+/*
+ * ================================================================
+ * ARQUIVO FONTE DO CSS - V.O.C.E
+ * ================================================================
+ * Este arquivo (input.css) é o ponto de entrada para o Tailwind.
+ * * 1. @tailwind base: Importa os estilos base e resets (Preflight).
+ * 2. @tailwind components: Importa as classes de componentes do Tailwind.
+ * 3. @tailwind utilities: Importa todas as classes utilitárias (ex: .mt-4, .flex).
+ * * Classes personalizadas são definidas dentro do @layer components.
+ * * IMPORTANTE: Este arquivo é compilado para gerar o 'public/css/style.css'.
+ * NÃO EDITE 'style.css' DIRETAMENTE.
+ */
+
+ @tailwind base;
+ @tailwind components;
+ @tailwind utilities;
+ 
+ /* * ================================================================
+  * Componentes Personalizados da Aplicação
+  * ================================================================
+  * @layer components: Registra classes customizadas que podem ser
+  * sobrescritas por utilitários (ex: <div class="btn-primary mt-4">).
+  */
+ @layer components {
+     
+     /**
+      * .btn-primary: Botão de ação principal (azul).
+      */
+     .btn-primary {
+         @apply bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+     }
+     
+     /**
+      * .btn-secondary: Botão de ação secundária (cinza).
+      * Usado para ações de "Cancelar" ou "Fechar".
+      */
+     .btn-secondary {
+         @apply bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+     }
+     
+     /**
+      * .btn-danger: Botão de ação destrutiva (vermelho).
+      * Usado para "Excluir" ou "Remover".
+      */
+     .btn-danger {
+         @apply bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+     }
+     
+     /**
+      * .form-input: Estilo padrão para campos de <input> e <select>.
+      * Define borda, padding e foco.
+      */
+     .form-input {
+         @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all duration-200;
+     }
+     
+     /**
+      * .dashboard-card: Contêiner base para os cards do dashboard.
+      * Define fundo branco, sombra e cantos arredondados.
+      */
+     .dashboard-card {
+         @apply bg-white rounded-xl shadow-lg p-6 hover:shadow-xl transition-shadow duration-300;
+     }
+     
+     /**
+      * .category-tag: Estilo base para tags de categoria.
+      */
+     .category-tag {
+         @apply inline-block px-3 py-1 text-xs font-semibold rounded-full text-white;
+     }
+     
+     /**
+      * .category-tag.jogos: Modificador de cor para a categoria "Jogos".
+      */
+     .category-tag.jogos {
+         @apply bg-red-500;
+     }
+     
+     /**
+      * .category-tag.rede-social: Modificador de cor para "Rede Social".
+      */
+     .category-tag.rede-social {
+         @apply bg-orange-500;
+     }
+     
+     /**
+      * .category-tag.educacional: Modificador de cor para "Educacional".
+      */
+     .category-tag.educacional {
+         @apply bg-green-500;
+     }
+     
+     /**
+      * .alert-row: Estilo de destaque para linhas da tabela que
+      * indicam um alerta (fundo vermelho claro).
+      */
+     .alert-row {
+         @apply bg-red-50 text-red-700 font-medium;
+     }
+ }
+ 
+ /* * ================================================================
+  * Estilos de Componentes Globais (Tabelas)
+  * ================================================================
+  * Classes aplicadas diretamente em elementos HTML (ex: <table>).
+  * Estas são classes de uso geral que estilizam componentes complexos.
+  */
+ 
+ /**
+  * .table-responsive: Contêiner para tabelas que permite rolagem
+  * horizontal em telas pequenas. Adiciona sombra e bordas arredondadas.
+  */
+ .table-responsive {
+     @apply overflow-x-auto rounded-lg shadow;
+ }
+ 
+ /**
+  * Estilos para <table> dentro de .table-responsive.
+  * Garante largura total e divisão entre linhas.
+  */
+ .table-responsive table {
+     @apply min-w-full divide-y divide-gray-200;
+ }
+ 
+ /**
+  * Estilos para <th> (cabeçalho da tabela) dentro de .table-responsive.
+  */
+ .table-responsive th {
+     @apply px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider;
+ }
+ 
+ /**
+  * Estilos para <td> (célula da tabela) dentro de .table-responsive.
+  */
+ .table-responsive td {
+     @apply px-6 py-4 whitespace-nowrap text-sm text-gray-900;
+ }
