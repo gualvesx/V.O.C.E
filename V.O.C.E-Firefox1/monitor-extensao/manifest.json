@@ -1,37 +1,24 @@
 {
-  "manifest_version": 3,
-  "name": "Monitor de Atividade para TCC (Firefox)",
+  "manifest_version": 2,
+  "name": "Monitor de Atividade V.O.C.E",
   "version": "1.1",
-  "description": "Monitora o tempo de uso de sites e envia para análise (versão com configuração manual).",
-
+  "description": "Monitora a atividade de navegação para o TCC.",
   "permissions": [
     "tabs",
+    "webNavigation",
     "storage",
-    "alarms"
+    "alarms",
+    "<all_urls>",
+    "http://localhost:3000/"
   ],
-
-  "host_permissions": [
-    "http://10.111.9.63:8081/*",
-    "http://localhost:8080/*",
-    "http://localhost:3000/*"
-  ],
-
   "background": {
     "scripts": ["background.js"]
   },
-
   "options_ui": {
     "page": "options.html",
-    "open_in_tab": true
+    "open_in_tab": false
   },
-
-  "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self';"
-  },
-
-  "browser_specific_settings": {
-    "gecko": {
-      "id": "monitor-tcc@meuprojeto.com"
-    }
+  "browser_action": {
+    "default_title": "Configurações do Monitor"
   }
 }
