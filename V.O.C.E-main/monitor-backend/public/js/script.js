@@ -30,22 +30,83 @@ let currentlyEditingUrl = null;
 //      1. SOCKET.IO (TEMPO REAL)
 // ================================================================
 let socket = null;
+
 if (typeof io !== 'undefined') {
-    socket = io(); 
-    socket.on('connect', () => console.log("🟢 Conectado ao Socket.IO:", socket.id));
+    socket = io();
+
+    socket.on('connect', () => console.log('Socket conectado no dashboard'));
+    socket.on('connect_error', (err) => console.error('Socket connect_error', err));
+    socket.on('disconnect', (reason) => console.log('Socket desconectado', reason));
+
     socket.on('logs_updated', (data) => {
+        console.log('socket: logs_updated recebido:', data); // debug essencial
+
+        // 1) valida e normaliza os logs recebidos
+        if (data.logs && Array.isArray(data.logs) && data.logs.length > 0) {
+            const incoming = data.logs.map(l => {
+                // Normaliza campos mínimos e timestamp
+                return {
+                    aluno_id: l.aluno_id ?? l.cpf ?? l.pc_id ?? null,
+                    url: l.url ?? '',
+                    duration: Number(l.duration ?? l.durationSeconds ?? 0),
+                    categoria: l.categoria ?? l.category ?? 'Não Categorizado',
+                    timestamp: l.timestamp ? new Date(l.timestamp).toISOString() : new Date().toISOString(),
+                    student_name: l.student_name ?? null
+                };
+            });
+
+            // 2) evitar duplicatas simples (baseado em aluno+url+timestamp)
+            const keySet = new Set(state.allLogs.map(x => `${x.aluno_id}||${x.url}||${new Date(x.timestamp).toISOString()}`));
+            const deduped = incoming.filter(i => {
+                const k = `${i.aluno_id}||${i.url}||${i.timestamp}`;
+                if (keySet.has(k)) return false;
+                keySet.add(k);
+                return true;
+            });
+
+            // 3) prepend no estado e limitar tamanho total
+            state.allLogs = [...deduped, ...state.allLogs];
+            const MAX_LOGS = 2000;
+            if (state.allLogs.length > MAX_LOGS) state.allLogs = state.allLogs.slice(0, MAX_LOGS);
+
+            // 4) se o servidor enviou summary, atualiza. Se não, opcional: recalcular localmente ou chamar fetchDataPanels()
+            if (data.summary && Array.isArray(data.summary)) {
+                state.allSummary = data.summary;
+            } else {
+                // Recalcular sumário localmente (opcional, mais leve que fetch) — exemplo simples:
+                // NOTE: se seu summary é mais complexo, prefira chamar fetchDataPanels()
+                const map = new Map();
+                state.allLogs.forEach(l => {
+                    const id = l.aluno_id || 'unknown';
+                    if (!map.has(id)) map.set(id, { aluno_id: id, student_name: l.student_name || id, total_duration: 0, log_count: 0, last_activity: null, has_red_alert: false, has_blue_alert: false });
+                    const rec = map.get(id);
+                    rec.total_duration += (Number(l.duration) || 0);
+                    rec.log_count += 1;
+                    const t = new Date(l.timestamp);
+                    if (!rec.last_activity || t > new Date(rec.last_activity)) rec.last_activity = t.toISOString();
+                    // flags simples (ajuste conforme sua lógica)
+                    if (['Rede Social','Streaming & Jogos','IA'].includes(l.categoria)) rec.has_red_alert = true;
+                });
+                state.allSummary = Array.from(map.values());
+            }
+
+            // 5) resetar paginação para ver as entradas novas
+            state.logsCurrentPage = 1;
+        }
+
+        // notificacao visual
         if (typeof Swal !== 'undefined') {
             Swal.fire({
                 toast: true, position: 'top-end', icon: 'info',
                 title: `Novos dados recebidos!`, showConfirmButton: false, timer: 2000
             });
         }
-        if (data.logs && Array.isArray(data.logs)) {
-            state.allLogs = [...data.logs, ...state.allLogs];
-        }
+
+        // 6) finalmente, re-renderiza
         applyFiltersAndRender();
     });
 }
+
 
 // ================================================================
 //      2. FUNÇÕES DE MODAIS (Window Functions)
@@ -359,7 +420,7 @@ function applyFiltersAndRender() {
             (l.aluno_id && l.aluno_id.toLowerCase().includes(term)) || 
             (l.url && l.url.toLowerCase().includes(term));
         const matchesCat = !category || l.categoria === category;
-        const matchesAlert = !showAlertsOnly || ['Rede Social', 'Streaming & Jogos', 'IA'].includes(l.categoria);
+        const matchesAlert = !showAlertsOnly || ['Rede Social', 'Jogos', 'Streaming', 'Anime', 'IA'].includes(l.categoria);
         return matchesSearch && matchesCat && matchesAlert;
     });
 
