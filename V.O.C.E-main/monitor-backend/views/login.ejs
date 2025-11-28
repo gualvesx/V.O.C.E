@@ -220,7 +220,7 @@
                     	       submitButton.textContent = 'Enviando...';
         
                     	       try {
-                      	       	  const response = await fetch('/forgot-password', {
+                          	       	 const response = await fetch('/esqueci-senha', {
                       	   	     	   	  method: 'POST',
                       	 	       	  headers: { 'Content-Type': 'application/json' },
                       	 	       	  body: JSON.stringify({ email })

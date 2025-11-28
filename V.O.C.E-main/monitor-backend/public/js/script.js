@@ -433,6 +433,7 @@ function updateLogsTable(logs) {
     const tbody = document.getElementById('logsTableBody');
     const countEl = document.getElementById('logs-count');
     if (!tbody) return;
+    
     if (countEl) countEl.textContent = logs.length;
     tbody.innerHTML = '';
 
@@ -442,17 +443,39 @@ function updateLogsTable(logs) {
     pLogs.forEach(log => {
         const row = document.createElement('tr');
         const cat = log.categoria || 'Não Categorizado';
-        if (['Rede Social', 'Streaming & Jogos'].includes(cat)) row.className = 'bg-red-50 text-red-800';
-        else if (cat === 'IA') row.className = 'bg-blue-50 text-blue-800';
+        
+        // Cores da linha baseadas na categoria
+        if (['Rede Social', 'Streaming & Jogos'].includes(cat)) {
+            row.className = 'bg-red-50 text-red-800';
+        } else if (cat === 'IA') {
+            row.className = 'bg-blue-50 text-blue-800';
+        } else {
+            row.className = 'hover:bg-gray-50'; // Padrão
+        }
+
+        // --- CÁLCULO DE MINUTOS ---
+        const durationSeconds = Number(log.duration);
+        const durationMinutes = (durationSeconds / 60).toFixed(1); // Ex: 120s -> 2.0 min
 
         row.innerHTML = `
-            <td class="px-6 py-4 text-sm">${log.student_name || log.aluno_id}</td>
-            <td class="px-6 py-4 text-sm"><a href="http://${log.url}" target="_blank" class="hover:underline text-blue-600 truncate block max-w-xs">${log.url}</a></td>
-            <td class="px-6 py-4 text-sm">${log.duration}s</td>
+            <td class="px-6 py-4 text-sm font-medium">${log.student_name || log.aluno_id}</td>
             <td class="px-6 py-4 text-sm">
-                <span class="category-trigger cursor-pointer hover:underline font-semibold" data-url="${log.url}" data-cat="${cat}">${cat}</span>
+                <a href="http://${log.url}" target="_blank" class="hover:underline text-blue-600 truncate block max-w-xs" title="${log.url}">
+                    ${log.url}
+                </a>
             </td>
-            <td class="px-6 py-4 text-sm text-gray-500">${new Date(log.timestamp).toLocaleTimeString()}</td>
+            <td class="px-6 py-4 text-sm font-bold">
+                ${durationMinutes} min
+            </td>
+            <td class="px-6 py-4 text-sm">
+                <span class="category-trigger cursor-pointer hover:underline font-semibold bg-white bg-opacity-50 px-2 py-1 rounded border border-gray-200" 
+                      data-url="${log.url}" data-cat="${cat}">
+                    ${cat}
+                </span>
+            </td>
+            <td class="px-6 py-4 text-sm text-gray-500">
+                ${new Date(log.timestamp).toLocaleTimeString('pt-BR')}
+            </td>
         `;
         tbody.appendChild(row);
     });
@@ -604,6 +627,62 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // DASHBOARD
     if(document.getElementById('dashboard-content')) {
+        const downloadBtn = document.getElementById('downloadPdfBtn');
+    if (downloadBtn) {
+        downloadBtn.addEventListener('click', async () => {
+            const dateInput = document.getElementById('reportDate');
+            const dateVal = dateInput.value;
+
+            // 1. Validação
+            if (!dateVal) {
+                return Swal.fire('Atenção', 'Por favor, selecione uma data para o relatório.', 'warning');
+            }
+
+            // 2. Feedback Visual (Loading)
+            const originalText = downloadBtn.textContent;
+            downloadBtn.textContent = 'Gerando PDF...';
+            downloadBtn.disabled = true;
+
+            try {
+                // 3. Chamada direta (Fetch) para pegar o BLOB (arquivo)
+                // Nota: Não usamos a função 'apiCall' genérica aqui porque ela espera JSON, e aqui queremos um Arquivo.
+                const response = await fetch(`/api/download-report/${dateVal}`);
+
+                if (response.status === 404) {
+                    throw new Error('Nenhum dado encontrado para a data selecionada.');
+                }
+                if (!response.ok) {
+                    throw new Error('Erro interno ao gerar o PDF.');
+                }
+
+                // 4. Conversão e Download do Arquivo
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Relatorio_VOCE_${dateVal}.pdf`;
+                document.body.appendChild(a); // Necessário para Firefox
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url); // Limpa memória
+
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Download Concluído',
+                    timer: 1500,
+                    showConfirmButton: false
+                });
+
+            } catch (error) {
+                console.error(error);
+                Swal.fire('Erro', error.message, 'error');
+            } finally {
+                // 5. Restaura o botão
+                downloadBtn.textContent = originalText;
+                downloadBtn.disabled = false;
+            }
+        });
+    }
         // Botoes de Tipo de Gráfico (CORRIGIDO)
         document.querySelectorAll('.chart-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -673,10 +752,51 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.getElementById('add-student-form-container').classList.toggle('hidden');
         });
 
-        document.getElementById('createClassBtn').addEventListener('click', async () => {
-            const name = document.getElementById('newClassName').value;
-            if(name) { await apiCall('/api/classes', 'POST', {name}); window.location.reload(); }
-            else Swal.fire('Erro', 'Nome da turma vazio', 'error');
+ document.getElementById('createClassBtn').addEventListener('click', async () => {
+            const nameInput = document.getElementById('newClassName');
+            const name = nameInput.value;
+            const btn = document.getElementById('createClassBtn');
+
+            // Validação simples
+            if (!name || name.trim() === '') {
+                return Swal.fire('Atenção', 'O nome da turma não pode ser vazio.', 'warning');
+            }
+
+            try {
+                // 1. Feedback visual (Evita clique duplo)
+                const originalText = btn.textContent;
+                btn.textContent = 'Criando...';
+                btn.disabled = true;
+
+                // 2. Tenta criar a turma na API
+                await apiCall('/api/classes', 'POST', { name: name.trim() });
+
+                // 3. Se der certo, mostra sucesso e recarrega
+                await Swal.fire({
+                    title: 'Sucesso!',
+                    text: 'Turma criada com sucesso!',
+                    icon: 'success',
+                    timer: 1500,
+                    showConfirmButton: false
+                });
+                
+                // Recarrega a página para atualizar o <select> vindo do EJS
+                window.location.reload(); 
+
+            } catch (error) {
+                console.error("Erro detalhado ao criar turma:", error);
+                
+                // 4. Se der erro, MOSTRA O MOTIVO NA TELA
+                Swal.fire({
+                    title: 'Erro ao criar turma',
+                    text: error.message || 'Erro desconhecido no servidor.',
+                    icon: 'error'
+                });
+            } finally {
+                // Restaura o botão
+                btn.textContent = 'Criar Turma';
+                btn.disabled = false;
+            }
         });
         
         document.getElementById('addStudentForm').addEventListener('submit', async (e) => {

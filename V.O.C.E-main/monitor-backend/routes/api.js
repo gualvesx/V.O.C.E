@@ -457,6 +457,11 @@ router.get('/alerts/:alunoId/:type', requireLogin, async (req, res) => {
 // --- Relatório em PDF ---
 router.get('/download-report/:date', requireLogin, async (req, res) => {
     try {
+        const dateStr = req.params.date; 
+        const requestedDate = new Date(dateStr + 'T00:00:00'); 
+        if (isNaN(requestedDate.getTime())) return res.status(400).send('Data inválida.');
+
+        // 1. Busca Dados dos Alunos
         const [students] = await pool.query('SELECT full_name, cpf, pc_id FROM students');
         const studentNameMap = new Map();
         students.forEach(s => {
@@ -464,82 +469,189 @@ router.get('/download-report/:date', requireLogin, async (req, res) => {
             if (s.cpf) studentNameMap.set(s.cpf, s.full_name);
         });
 
-        const dateStr = req.params.date; 
-        const requestedDate = new Date(dateStr + 'T00:00:00'); 
-        if (isNaN(requestedDate.getTime())) return res.status(400).send('Formato de data inválido. Use AAAA-MM-DD.');
-
+        // 2. Coleta de Dados (Garante que é DO DIA selecionado)
         const today = new Date();
         today.setHours(0,0,0,0);
         const requestedDateOnly = new Date(requestedDate);
-
+        
         let aggregatedData = {};
         let dataSource = '';
         let foundData = false;
 
+        // Verifica se a data pedida é HOJE (Tempo Real) ou PASSADO (Histórico)
         if (requestedDateOnly.getTime() === today.getTime()) {
-            dataSource = 'Logs do Dia (em tempo real)';
+            dataSource = 'Monitoramento em Tempo Real';
+            // CORREÇÃO: Usa 'dateStr' no WHERE para garantir que é só daquele dia
             const [logsResult] = await pool.query(
-                `SELECT aluno_id, url, SUM(duration) as total_duration, COUNT(*) as count
-                 FROM logs WHERE DATE(timestamp) = CURDATE() GROUP BY aluno_id, url`
+                `SELECT aluno_id, url, categoria, SUM(duration) as total_duration, COUNT(*) as count
+                 FROM logs 
+                 WHERE DATE(timestamp) = ? 
+                 GROUP BY aluno_id, url, categoria`,
+                [dateStr] 
             );
+
             if (logsResult.length > 0) {
                  foundData = true;
                  logsResult.forEach(row => {
                     if (!aggregatedData[row.aluno_id]) aggregatedData[row.aluno_id] = {};
-                    aggregatedData[row.aluno_id][row.url] = { total_duration: row.total_duration, count: row.count };
+                    aggregatedData[row.aluno_id][row.url] = { 
+                        total_duration: row.total_duration, 
+                        count: row.count,
+                        category: row.categoria 
+                    };
                  });
             }
         } else {
-            dataSource = 'Logs Arquivados';
+            dataSource = 'Histórico Arquivado';
+            // Busca na tabela de logs antigos pela data de arquivamento
             const [rows] = await pool.query('SELECT aluno_id, daily_logs FROM old_logs WHERE archive_date = ?', [dateStr]);
             if (rows.length > 0) {
                 foundData = true;
                 rows.forEach(row => {
                     try {
-                        aggregatedData[row.aluno_id] = row.daily_logs;
-                    } catch (parseError) {
-                         console.error(`Erro ao parsear JSON de old_logs:`, parseError);
-                    }
+                        aggregatedData[row.aluno_id] = typeof row.daily_logs === 'string' ? JSON.parse(row.daily_logs) : row.daily_logs;
+                    } catch (e) { console.error('Erro JSON logs antigos', e); }
                 });
             }
         }
 
-        if (!foundData) return res.status(404).send('Nenhum log encontrado para esta data.');
+        if (!foundData) return res.status(404).send(`Nenhum dado encontrado para ${dateStr}.`);
 
-        const doc = new PDFDocument({ margin: 50 });
-        const filename = `relatorio-logs-${dateStr}.pdf`;
+        // ================================================================
+        //      GERAÇÃO DO PDF
+        // ================================================================
+        
+        const doc = new PDFDocument({ margin: 40, size: 'A4' });
+        const filename = `Relatorio_VOCE_${dateStr}.pdf`;
         res.setHeader('Content-disposition', `attachment; filename="${filename}"`);
         res.setHeader('Content-type', 'application/pdf');
         doc.pipe(res);
 
-        doc.fontSize(18).text('Relatório de Atividade de Alunos', { align: 'center' });
-        doc.fontSize(12).text(`Data: ${requestedDate.toLocaleDateString('pt-BR')} | Fonte: ${dataSource}`, { align: 'center' });
-        doc.moveDown(2);
+        const colors = { primary: '#B91C1C', secondary: '#1F2937', accent: '#F3F4F6', text: '#374151', muted: '#9CA3AF' };
 
+        const drawHeader = () => {
+            doc.rect(0, 0, 595.28, 80).fill(colors.primary);
+            doc.fillColor('#FFFFFF').fontSize(24).font('Helvetica-Bold').text('Relatório de Monitoramento', 40, 25);
+            doc.fontSize(10).font('Helvetica').text(`Gerado via V.O.C.E | ${dataSource}`, 40, 55);
+            doc.fontSize(14).text(requestedDate.toLocaleDateString('pt-BR'), 450, 25, { align: 'right' });
+            doc.moveDown(4);
+        };
+
+        // --- CORREÇÃO: Formatar em MINUTOS ---
+        const formatMinutes = (seconds) => {
+            const mins = (seconds / 60).toFixed(1); // Ex: 12.5
+            return `${mins} min`;
+        };
+
+        drawHeader();
+
+        // --- Resumo Geral ---
+        let totalStudents = Object.keys(aggregatedData).length;
+        let grandTotalTime = 0;
+        let topSiteOverall = { url: '-', duration: 0 };
+        let siteMapGlobal = {};
+
+        for (const uid in aggregatedData) {
+            for (const url in aggregatedData[uid]) {
+                const d = aggregatedData[uid][url].total_duration;
+                grandTotalTime += d;
+                siteMapGlobal[url] = (siteMapGlobal[url] || 0) + d;
+                if (siteMapGlobal[url] > topSiteOverall.duration) {
+                    topSiteOverall = { url: url, duration: siteMapGlobal[url] };
+                }
+            }
+        }
+
+        const summaryY = doc.y;
+        const cardWidth = 160;
+        const cardHeight = 60;
+        
+        doc.roundedRect(40, summaryY, cardWidth, cardHeight, 5).fill(colors.accent);
+        doc.fillColor(colors.primary).fontSize(20).text(totalStudents, 55, summaryY + 15);
+        doc.fillColor(colors.text).fontSize(9).text('Alunos Ativos', 55, summaryY + 40);
+
+        doc.roundedRect(215, summaryY, cardWidth, cardHeight, 5).fill(colors.accent);
+        // Usa formatMinutes aqui
+        doc.fillColor(colors.primary).fontSize(20).text(formatMinutes(grandTotalTime), 230, summaryY + 15);
+        doc.fillColor(colors.text).fontSize(9).text('Tempo Total Registrado', 230, summaryY + 40);
+
+        doc.roundedRect(390, summaryY, cardWidth, cardHeight, 5).fill(colors.accent);
+        doc.fillColor(colors.primary).fontSize(12).text(topSiteOverall.url.substring(0, 20) + (topSiteOverall.url.length>20?'...':''), 405, summaryY + 18);
+        doc.fillColor(colors.text).fontSize(9).text('Site Mais Acessado', 405, summaryY + 40);
+
+        doc.moveDown(5);
+
+        // --- Detalhes por Aluno ---
         for (const alunoId in aggregatedData) {
-            const displayName = studentNameMap.get(alunoId) || alunoId;
-            const dailyLogs = aggregatedData[alunoId];
-            doc.fontSize(14).font('Helvetica-Bold').text(`Aluno: ${displayName}`);
+            const displayName = studentNameMap.get(alunoId) || `ID: ${alunoId}`;
+            const userLogs = aggregatedData[alunoId];
+            
+            if (doc.y > 650) { doc.addPage(); drawHeader(); }
+
+            doc.rect(40, doc.y, 515, 25).fill('#E5E7EB');
+            doc.fillColor(colors.secondary).fontSize(12).font('Helvetica-Bold').text(displayName, 50, doc.y - 18);
             doc.moveDown(0.5);
 
-            if (dailyLogs && typeof dailyLogs === 'object' && Object.keys(dailyLogs).length > 0) {
-                 for (const url in dailyLogs) {
-                    const details = dailyLogs[url];
-                    const duration = details.total_duration || 0;
-                    const count = details.count || 0;
-                    const durationMinutes = (duration / 60).toFixed(1);
-                    doc.fontSize(10).font('Helvetica').text(`  - URL: ${url} | Duração: ${durationMinutes} min | Acessos: ${count}`);
-                }
-            } else {
-                 doc.fontSize(10).font('Helvetica').text('  Nenhuma atividade registrada ou dados inválidos.');
-            }
-            doc.moveDown(1.5);
+            const sortedSites = Object.entries(userLogs)
+                .map(([url, data]) => ({ url, ...data }))
+                .sort((a, b) => b.total_duration - a.total_duration);
+            
+            const top5 = sortedSites.slice(0, 5);
+            const maxDuration = top5.length > 0 ? top5[0].total_duration : 1;
+
+            const startY = doc.y;
+            const chartWidth = 200;
+            const barHeight = 15;
+            const gap = 8;
+            
+            doc.fontSize(8).font('Helvetica-Bold').fillColor(colors.text).text('Top 5 Sites (Duração)', 40, startY);
+            
+            let currentBarY = startY + 15;
+            top5.forEach((site) => {
+                const barW = (site.total_duration / maxDuration) * chartWidth;
+                doc.rect(40, currentBarY, chartWidth, barHeight).fill('#F3F4F6');
+                doc.rect(40, currentBarY, Math.max(barW, 2), barHeight).fill(colors.primary);
+                doc.fillColor('#000').text(site.url.substring(0, 30), 42, currentBarY + 3);
+                // Usa formatMinutes aqui
+                doc.fillColor('#666').text(formatMinutes(site.total_duration), 40 + chartWidth + 5, currentBarY + 3);
+                currentBarY += (barHeight + gap);
+            });
+
+            const tableX = 300;
+            const tableY = startY + 15;
+            
+            doc.fontSize(8).font('Helvetica-Bold').fillColor(colors.text);
+            doc.text('Site / Aplicação', tableX, startY);
+            doc.text('Categoria', tableX + 130, startY);
+            doc.text('Tempo', tableX + 210, startY);
+
+            let rowY = tableY;
+            sortedSites.slice(0, 8).forEach((site, i) => {
+                if (i % 2 === 0) doc.rect(tableX - 2, rowY - 2, 260, 12).fill('#FAFAFA');
+                doc.fillColor(colors.text).font('Helvetica').fontSize(8);
+                doc.text(site.url.substring(0, 25), tableX, rowY);
+                doc.text((site.category || 'Geral').substring(0, 15), tableX + 130, rowY);
+                // Usa formatMinutes aqui
+                doc.text(formatMinutes(site.total_duration), tableX + 210, rowY);
+                rowY += 12;
+            });
+
+            const sectionHeight = Math.max((top5.length * (barHeight + gap)) + 20, (sortedSites.slice(0,8).length * 12) + 20);
+            doc.y = startY + sectionHeight + 20;
+            doc.moveTo(40, doc.y - 10).lineTo(555, doc.y - 10).strokeColor('#E5E7EB').stroke();
         }
+
+        const range = doc.bufferedPageRange();
+        for (let i = range.start; i < range.start + range.count; i++) {
+            doc.switchToPage(i);
+            doc.fontSize(8).fillColor(colors.muted).text(`Página ${i + 1} de ${range.count}`, 0, doc.page.height - 30, { align: 'center' });
+        }
+
         doc.end();
 
     } catch (error) {
-        console.error('ERRO CRÍTICO ao gerar relatório em PDF:', error);
-        res.status(500).send('Erro interno ao gerar o relatório.');
+        console.error('ERRO CRÍTICO no PDF:', error);
+        if (!res.headersSent) res.status(500).send('Erro ao gerar relatório.');
     }
 });
 
