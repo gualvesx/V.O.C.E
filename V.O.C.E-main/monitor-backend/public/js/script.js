@@ -566,7 +566,18 @@ function renderPagination(total) {
     div.innerHTML = html;
 }
 window.changePage = (delta) => {
-    state.logsCurrentPage += delta;
+    const totalLogs = state.allLogs.length; // Ou filteredLogs.length se estiver filtrado
+    const totalPages = Math.ceil(totalLogs / state.logsPerPage);
+    
+    const newPage = state.logsCurrentPage + delta;
+
+    // Impede ir para página 0 ou negativa
+    if (newPage < 1) return;
+    
+    // Impede ir além da última página (opcional, mas recomendado)
+    if (newPage > totalPages && totalPages > 0) return;
+
+    state.logsCurrentPage = newPage;
     applyFiltersAndRender();
 }
 
