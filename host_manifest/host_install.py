@@ -3,8 +3,8 @@ import json
 from pathlib import Path
 import subprocess
 
-user_host = Path(__file__).parent
-base_path = user_host.parent
+user_home = Path.home()
+base_path = user_home / "Downloads" / "V.O.C.E"
 user_path = base_path / "native_host" / "run_host.bat"
 
 chrome_path = base_path / "host_manifest" / "host_manifest-chrome.json"
@@ -23,7 +23,9 @@ manifest_firefox = {
     "description": "Host nativo para o TCC de monitoramento",
     "path": str(user_path),
     "type": "stdio",
-    "allowed_extensions": ["moz-extension://monitor-tcc@meuprojeto.com"]
+"allowed_extensions": [
+  "voce-tcc-final-2025-corrigido@senai.br"
+]
 }
 
 chrome_path_str = str(chrome_path).replace('\\', '\\\\')
