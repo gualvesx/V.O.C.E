@@ -66,7 +66,7 @@ O módulo de IA utiliza recursos de processamento de linguagem natural. Um dos r
 
 ---
 
-## 🛠️ Instalação e Configuração
+## 🛠️ Instalação e Configuração do Servidor
 
 ### Pré-requisitos
 
@@ -88,27 +88,3 @@ pip3 install -r requirements.txt
 
 # Configurar o arquivo .env (copie o .env.example)
 # Preencha as credenciais do MySQL
-```
-
-### 2. Configuração do Banco de Dados
-
-1. Crie o banco de dados `v_o_c_e`.
-2. Importe o schema:
-   ```bash
-   mysql -u [seu_usuario] -p v_o_c_e < ../../database_voce.sql
-   ```
-
-### 3. Configuração do Native Host (Python)
-
-Siga as instruções nos diretórios `host_manifest` e `native_host` para instalar o host nativo no sistema operacional e permitir a comunicação com a Extensão.
-
-### 4. Execução
-
-```bash
-# Iniciar o servidor (com nodemon)
-npm start
-```
-
----
-
-
