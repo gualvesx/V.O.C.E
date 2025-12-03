@@ -319,7 +319,7 @@ CREATE TABLE IF NOT EXISTS `students` (
 -- Copiando dados para a tabela v_o_c_e.students: ~3 rows (aproximadamente)
 INSERT INTO `students` (`id`, `full_name`, `cpf`, `pc_id`, `created_at`) VALUES
 	(1, 'Sidney da Silva Paulino', '47821634875', 'PC18', '2025-10-17 19:46:00'),
-	(2, 'Ana Lara Fernandes', '60522655823', NULL, '2025-10-17 19:46:00'),
+	(2, 'Ana Lara Fernandes', '60522655823', 'PC17', '2025-10-17 19:46:00'),
 	(3, 'Gustavo Alves', '49418787873', 'PC22', '2025-10-17 19:46:00');
 
 /*!40103 SET TIME_ZONE=IFNULL(@OLD_TIME_ZONE, 'system') */;
