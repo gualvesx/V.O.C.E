@@ -1,5 +1,5 @@
 // ================================================================
-//      SCRIPT GLOBAL V.O.C.E (Versão Corrigida: Gráficos & Alertas)
+//      SCRIPT GLOBAL V.O.C.E (Versão Corrigida: SweetAlert2 Total)
 // ================================================================
 
 let state = {
@@ -37,12 +37,10 @@ if (typeof io !== 'undefined') {
     socket.on('disconnect', (reason) => console.log('Socket desconectado', reason));
 
     socket.on('logs_updated', (data) => {
-        console.log('socket: logs_updated recebido:', data); // debug essencial
+        console.log('socket: logs_updated recebido:', data); 
 
-        // 1) valida e normaliza os logs recebidos
         if (data.logs && Array.isArray(data.logs) && data.logs.length > 0) {
             const incoming = data.logs.map(l => {
-                // Normaliza campos mínimos e timestamp
                 return {
                     aluno_id: l.aluno_id ?? l.cpf ?? l.pc_id ?? null,
                     url: l.url ?? '',
@@ -53,7 +51,6 @@ if (typeof io !== 'undefined') {
                 };
             });
 
-            // 2) evitar duplicatas simples (baseado em aluno+url+timestamp)
             const keySet = new Set(state.allLogs.map(x => `${x.aluno_id}||${x.url}||${new Date(x.timestamp).toISOString()}`));
             const deduped = incoming.filter(i => {
                 const k = `${i.aluno_id}||${i.url}||${i.timestamp}`;
@@ -62,16 +59,13 @@ if (typeof io !== 'undefined') {
                 return true;
             });
 
-            // 3) prepend no estado e limitar tamanho total
             state.allLogs = [...deduped, ...state.allLogs];
             const MAX_LOGS = 2000;
             if (state.allLogs.length > MAX_LOGS) state.allLogs = state.allLogs.slice(0, MAX_LOGS);
 
-            // 4) se o servidor enviou summary, atualiza. Se não, recalcula localmente.
             if (data.summary && Array.isArray(data.summary)) {
                 state.allSummary = data.summary;
             } else {
-                // Recalcular sumário localmente (Mantido seu código original de fallback)
                 const map = new Map();
                 state.allSummary.forEach(s => {
                      const id = s.aluno_id || 'unknown';
@@ -95,26 +89,18 @@ if (typeof io !== 'undefined') {
                 state.allSummary = Array.from(map.values());
             }
 
-            // 5) resetar paginação
             state.logsCurrentPage = 1;
 
-            // ============================================================
-            // CORREÇÃO AQUI: FORÇAR O CÁLCULO DOS ALERTAS NO SOCKET TAMBÉM
-            // ============================================================
-            enrichSummaryWithAlerts(); 
+            consolidateDuplicateStudents(); 
+            enrichSummaryWithAlerts();      
         }
 
-        // notificacao visual
         if (typeof Swal !== 'undefined') {
             Swal.fire({
                 toast: true, position: 'top-end', icon: 'info',
                 title: `Novos dados recebidos!`, showConfirmButton: false, timer: 2000
             });
         }
-
-        consolidateDuplicateStudents(); // Unifica antes de mostrar
-        enrichSummaryWithAlerts();      // Calcula alertas
-        // -------------------------------------------------
     
         applyFiltersAndRender();
     });
@@ -241,7 +227,6 @@ window.openCategoryModal = function(url, currentCategory) {
     modal.classList.remove('hidden');
 }
 
-// Função Global segura para fechar o modal
 window.closeCategoryModal = function() {
     document.getElementById('categoryEditModal')?.classList.add('hidden');
     currentlyEditingUrl = null;
@@ -289,7 +274,6 @@ async function populateShareModal() {
     const currentList = document.getElementById('currentClassMembers');
     if (!list || !currentList) return;
 
-    // Feedback visual de carregamento
     list.innerHTML = '<option>Carregando...</option>';
     currentList.innerHTML = '<li class="p-2 text-gray-500 text-sm">Carregando membros...</li>';
 
@@ -299,7 +283,6 @@ async function populateShareModal() {
             apiCall(`/api/classes/${state.activeClassId}/members`)
         ]);
         
-        // 1. Popula o Select de Professores
         list.innerHTML = '<option value="">Selecione um professor...</option>';
         const memberIds = members.map(m => m.id);
 
@@ -312,8 +295,7 @@ async function populateShareModal() {
             }
         });
 
-        // 2. Popula a Lista de Membros Atuais
-        currentList.innerHTML = ''; // Limpa o carregando
+        currentList.innerHTML = ''; 
         
         if (members.length === 0) {
             currentList.innerHTML = '<li class="p-2 text-gray-500 text-sm">Nenhum membro nesta turma.</li>';
@@ -327,7 +309,6 @@ async function populateShareModal() {
                                 ${m.isOwner ? '<span class="ml-2 text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded-full">Dono</span>' : ''}
                             </div>`;
                 
-                // Só mostra botão de remover se você for o dono E o membro não for o dono
                 if (isCurrentUserOwner && !m.isOwner) {
                     html += `<button class="remove-member-btn text-red-500 hover:text-red-700 font-bold p-1 hover:bg-red-50 rounded" data-pid="${m.id}" title="Remover professor">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -355,12 +336,9 @@ async function fetchStudentsInClass(classId) {
     if (!classId || classId === 'null') { state.studentsInClass = []; return; }
     try { state.studentsInClass = await apiCall(`/api/classes/${classId}/students`); } catch (e) { state.studentsInClass = []; }
 }
-// Função para garantir que os alertas visuais estejam sincronizados com os logs
-// Função para unificar "pc22" e "CPF" no mesmo aluno no resumo
+
 function consolidateDuplicateStudents() {
     const pcToCpfMap = {};
-    
-    // Mapeamento PC -> CPF
     state.allStudents.forEach(student => {
         if (student.cpf && student.pc_id) {
             pcToCpfMap[student.pc_id.toLowerCase()] = student.cpf;
@@ -371,8 +349,6 @@ function consolidateDuplicateStudents() {
 
     state.allSummary.forEach(item => {
         let uniqueId = item.aluno_id;
-
-        // Tenta encontrar o dono do PC
         if (pcToCpfMap[uniqueId] || pcToCpfMap[uniqueId.toLowerCase()]) {
             uniqueId = pcToCpfMap[uniqueId] || pcToCpfMap[uniqueId.toLowerCase()];
         }
@@ -381,52 +357,38 @@ function consolidateDuplicateStudents() {
             unifiedMap.set(uniqueId, { ...item, aluno_id: uniqueId });
         } else {
             const existing = unifiedMap.get(uniqueId);
-
             existing.total_duration += (item.total_duration || 0);
             existing.log_count += (item.log_count || 0);
 
             if (item.has_red_alert) existing.has_red_alert = true;
             if (item.has_blue_alert) existing.has_blue_alert = true;
 
-            // --- CORREÇÃO AQUI: Comparação robusta de datas ---
             const dateItem = item.last_activity ? new Date(item.last_activity).getTime() : 0;
             const dateExisting = existing.last_activity ? new Date(existing.last_activity).getTime() : 0;
 
-            // Se o item atual (ex: pc22) for mais recente que o existente (ex: cpf), atualiza a data
-            if (dateItem > dateExisting) {
-                existing.last_activity = item.last_activity;
-            }
-            
-            // Prioriza nome real sobre nome de PC
-            if (item.student_name && !item.student_name.toLowerCase().includes('pc')) {
-                existing.student_name = item.student_name;
-            }
+            if (dateItem > dateExisting) existing.last_activity = item.last_activity;
+            if (item.student_name && !item.student_name.toLowerCase().includes('pc')) existing.student_name = item.student_name;
         }
     });
 
     state.allSummary = Array.from(unifiedMap.values());
 }
+
 function enrichSummaryWithAlerts() {
-    // Cria um mapa rápido para acessar os alunos no resumo
     const summaryMap = new Map();
     state.allSummary.forEach(s => summaryMap.set(s.aluno_id, s));
 
-    // Varre TODOS os logs atuais para definir os alertas
     state.allLogs.forEach(log => {
         const student = summaryMap.get(log.aluno_id);
         if (student) {
-            // Regra do Alerta AZUL (IA)
-            if (log.categoria === 'IA') {
-                student.has_blue_alert = true;
-            }
-            
-            // Regra do Alerta VERMELHO (Jogos, Redes, etc)
+            if (log.categoria === 'IA') student.has_blue_alert = true;
             if (['Rede Social', 'Streaming & Jogos', 'Jogos', 'Streaming', 'Anime', 'Loja Digital'].includes(log.categoria)) {
                 student.has_red_alert = true;
             }
         }
     });
 }
+
 async function fetchDataPanels() {
     if (!document.getElementById('dashboard-content')) return;
     try {
@@ -438,18 +400,14 @@ async function fetchDataPanels() {
         const params = new URLSearchParams();
         if (targetDate) params.append('date', targetDate);
         if (classId && classId !== 'null') params.append('classId', classId);
-        
         if ([...params].length > 0) url += `?${params.toString()}`;
 
         const { logs, summary } = await apiCall(url);
-        
         state.allLogs = logs || [];
         state.allSummary = summary || [];
 
-        // --- ORDEM DE EXECUÇÃO ATUALIZADA ---
-        consolidateDuplicateStudents(); // 1. Junta PC e CPF
-        enrichSummaryWithAlerts();      // 2. Verifica alertas no usuário unificado
-        // ------------------------------------
+        consolidateDuplicateStudents(); 
+        enrichSummaryWithAlerts();      
 
         applyFiltersAndRender();
     } catch (e) { console.error(e); }
@@ -475,7 +433,8 @@ function renderAllStudents() {
         div.innerHTML = `
             <div>
                 <span class="font-medium text-gray-700">${student.full_name}</span>
-                <button class="ml-2 text-gray-400 hover:text-blue-600 text-xs btn-edit-student" data-student='${JSON.stringify(student)}'>✏️</button>
+                <button class="ml-2 text-gray-400 hover:text-blue-600 text-xs btn-edit-student" data-student='${JSON.stringify(student)}' title="Editar">✏️</button>
+                <button class="ml-1 text-gray-400 hover:text-red-600 text-xs btn-delete-student" data-sid="${student.id}" title="Excluir">🗑️</button>
             </div>
             ${!inClass ? `<button data-sid="${student.id}" class="btn-add-student text-green-600 hover:text-green-800 font-bold text-xl">+</button>` : '<span class="text-xs text-green-600 font-semibold">Na Turma</span>'}
         `;
@@ -547,18 +506,16 @@ function updateLogsTable(logs) {
         const row = document.createElement('tr');
         const cat = log.categoria || 'Não Categorizado';
         
-        // Cores da linha baseadas na categoria
         if (['Rede Social', 'Streaming & Jogos', 'Jogos', 'Streaming'].includes(cat)) {
             row.className = 'bg-red-50 text-red-800';
         } else if (cat === 'IA') {
             row.className = 'bg-blue-50 text-blue-800';
         } else {
-            row.className = 'hover:bg-gray-50'; // Padrão
+            row.className = 'hover:bg-gray-50';
         }
 
-        // --- CÁLCULO DE MINUTOS ---
         const durationSeconds = Number(log.duration);
-        const durationMinutes = (durationSeconds / 60).toFixed(1); // Ex: 120s -> 2.0 min
+        const durationMinutes = (durationSeconds / 60).toFixed(1);
 
         row.innerHTML = `
             <td class="px-6 py-4 text-sm font-medium">${log.student_name || log.aluno_id}</td>
@@ -591,16 +548,13 @@ function updateUserSummaryTable(users) {
     if (!tbody) return;
     tbody.innerHTML = '';
 
-    const now = new Date(); // Hora atual para comparar atividade
+    const now = new Date(); 
 
     users.forEach(u => {
         const tr = document.createElement('tr');
-        // Adicionei transição suave e bordas mais bonitas
         tr.className = 'hover:bg-gray-50 cursor-pointer summary-row transition-all duration-200 border-b border-gray-100';
         tr.dataset.studentName = u.student_name || u.aluno_id;
 
-        // --- 1. Lógica de Status (Badges Modernos) ---
-        // Ícones SVG embutidos para não depender de biblioteca externa
         const iconIA = `<svg class="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>`;
         const iconAlert = `<svg class="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>`;
         const iconCheck = `<svg class="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
@@ -608,7 +562,6 @@ function updateUserSummaryTable(users) {
         let statusHtml = '';
 
         if (u.has_red_alert && u.has_blue_alert) {
-            // Caso Misto (Ambos)
             statusHtml = `
                 <div class="flex flex-col gap-1 items-start">
                     <button class="alert-btn inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 border border-red-200 hover:bg-red-200 transition-colors" data-aid="${u.aluno_id}" data-type="red">
@@ -619,49 +572,31 @@ function updateUserSummaryTable(users) {
                     </button>
                 </div>`;
         } else if (u.has_red_alert) {
-            // Apenas Vermelho
             statusHtml = `
                 <button class="alert-btn inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 transition-colors shadow-sm" data-aid="${u.aluno_id}" data-type="red">
                     ${iconAlert} Indevido
                 </button>`;
         } else if (u.has_blue_alert) {
-            // Apenas Azul
             statusHtml = `
                 <button class="alert-btn inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors shadow-sm" data-aid="${u.aluno_id}" data-type="blue">
                     ${iconIA} Uso de IA
                 </button>`;
         } else {
-            // Tudo OK
             statusHtml = `
                 <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm">
                     ${iconCheck} Normal
                 </span>`;
         }
 
-        // --- 2. Lógica ON/OFF ---
         let isOnline = false;
         
         if (u.last_activity) {
             const lastTime = new Date(u.last_activity);
-            
-            // Se a data for inválida, ignora
             if (!isNaN(lastTime.getTime())) {
                 const now = new Date();
-                
-                // Calcula a diferença em milissegundos
                 let diffMs = now - lastTime;
-                
-                // CORREÇÃO DE FUSO: Se a diferença for muito grande negativa (ex: servidor no futuro), 
-                // ou muito grande positiva por causa de GMT errado, tentamos normalizar.
-                // Mas a forma mais simples é: se foi atualizado nos últimos 5 minutos REAIS.
-                
                 const diffMinutes = diffMs / 1000 / 60;
-
-                // Debug: descomente se ainda der erro para ver no Console (F12) o que está acontecendo
-                // console.log(`User: ${u.student_name}, Diff: ${diffMinutes.toFixed(2)} min`, lastTime, now);
-
-                // Aceita se a diferença for menor que 10 minutos (damos uma folga maior)
-                // E também aceita se for negativo pequeno (caso o relógio do pc do aluno esteja levemente adiantado)
+                // Ajustado para 10 minutos conforme regra atual
                 if (diffMinutes < 10 && diffMinutes > -5) { 
                     isOnline = true; 
                 }
@@ -681,7 +616,6 @@ function updateUserSummaryTable(users) {
                  <span class="text-xs font-semibold text-gray-500">OFF</span>
                </div>`;
 
-        // --- 3. Renderização das Colunas ---
         tr.innerHTML = `
             <td class="px-6 py-4 whitespace-nowrap">${statusHtml}</td>
             <td class="px-6 py-4 whitespace-nowrap">${onlineBadge}</td>
@@ -698,11 +632,11 @@ function updateUserSummaryTable(users) {
         tbody.appendChild(tr);
     });
 }
+
 function updateChart(logs) {
     const ctx = document.getElementById('mainChart');
     if (!ctx) return;
     
-    // Destrói gráfico anterior com segurança
     if (state.mainChartInstance) {
         state.mainChartInstance.destroy();
         state.mainChartInstance = null;
@@ -713,7 +647,7 @@ function updateChart(logs) {
     const sorted = Object.entries(usage).sort((a,b) => b[1] - a[1]).slice(0, 10);
 
     state.mainChartInstance = new Chart(ctx, {
-        type: state.currentChartType, // Usa o tipo selecionado (bar, pie, etc.)
+        type: state.currentChartType, 
         data: {
             labels: sorted.map(s => s[0]),
             datasets: [{
@@ -780,7 +714,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     await Promise.all([fetchAllStudents(), fetchDataPanels()]);
 
-    // LISTENER DA SELEÇÃO DE TURMA
     const classSelect = document.getElementById('classSelect');
     if(classSelect) {
         classSelect.value = state.activeClassId || 'null';
@@ -788,17 +721,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         const updateUI = async () => {
             const isSel = state.activeClassId && state.activeClassId !== 'null';
             
-            // Atualiza dados da turma se selecionada
             if(isSel) await fetchStudentsInClass(state.activeClassId);
             else state.studentsInClass = [];
 
-            // UI de Gerenciamento
             if(document.getElementById('student-management-panel')) {
                 document.getElementById('class-students-panel').classList.toggle('hidden', !isSel);
                 const nameEl = document.getElementById('class-name-in-list');
                 if(nameEl) nameEl.textContent = isSel ? state.activeClassName : '';
                 
-                // Força habilitação/desabilitação dos botões
                 ['editClassBtn', 'deleteClassBtn', 'shareClassBtn'].forEach(id => {
                     const btn = document.getElementById(id);
                     if(btn) btn.disabled = !isSel;
@@ -808,7 +738,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 renderAllStudents();
             }
 
-            // UI de Dashboard
             if(document.getElementById('dashboard-content')) applyFiltersAndRender();
         };
 
@@ -820,11 +749,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             updateUI();
         });
         
-        // Executa na carga inicial
         updateUI();
     }
 
-    // DASHBOARD
     if(document.getElementById('dashboard-content')) {
         
         const downloadBtn = document.getElementById('downloadPdfBtn');
@@ -833,18 +760,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const dateInput = document.getElementById('reportDate');
                 const dateVal = dateInput.value;
 
-                // 1. Validação
                 if (!dateVal) {
                     return Swal.fire('Atenção', 'Por favor, selecione uma data para o relatório.', 'warning');
                 }
 
-                // 2. Feedback Visual (Loading)
                 const originalText = downloadBtn.textContent;
                 downloadBtn.textContent = 'Gerando PDF...';
                 downloadBtn.disabled = true;
 
                 try {
-                    // 3. Chamada direta (Fetch) para pegar o BLOB (arquivo)
                     const response = await fetch(`/api/download-report/${dateVal}`);
                     
                     if (response.status === 404) {
@@ -854,16 +778,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                         throw new Error('Erro interno ao gerar o PDF.');
                     }
 
-                    // 4. Conversão e Download do Arquivo
                     const blob = await response.blob();
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
                     a.download = `Relatorio_VOCE_${dateVal}.pdf`;
-                    document.body.appendChild(a); // Necessário para Firefox
+                    document.body.appendChild(a); 
                     a.click();
                     a.remove();
-                    window.URL.revokeObjectURL(url); // Limpa memória
+                    window.URL.revokeObjectURL(url); 
 
                     Swal.fire({
                         icon: 'success',
@@ -876,17 +799,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                     console.error(error);
                     Swal.fire('Erro', error.message, 'error');
                 } finally {
-                    // 5. Restaura o botão
                     downloadBtn.textContent = originalText;
                     downloadBtn.disabled = false;
                 }
             });
         }
 
-        // Botoes de Tipo de Gráfico
         document.querySelectorAll('.chart-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                // Atualiza visual dos botões
                 document.querySelectorAll('.chart-btn').forEach(b => {
                     b.classList.remove('bg-red-700', 'text-white');
                     b.classList.add('bg-gray-200', 'text-gray-700');
@@ -894,9 +814,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 btn.classList.remove('bg-gray-200', 'text-gray-700');
                 btn.classList.add('bg-red-700', 'text-white');
 
-                // Atualiza estado e recria gráfico
                 state.currentChartType = btn.dataset.type;
-                // Filtra novamente os dados atuais para recriar o gráfico
                 applyFiltersAndRender(); 
             });
         });
@@ -943,10 +861,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             } catch(e) { Swal.fire('Erro', e.message, 'error'); }
         });
         
-        // --- LISTENER ADICIONADO PARA O FECHAMENTO DO MODAL ---
         document.getElementById('closeCategoryModalX')?.addEventListener('click', closeCategoryModal);
         document.getElementById('cancelCategoryModalBtn')?.addEventListener('click', closeCategoryModal);
-        // -----------------------------------------------------
 
         document.getElementById('clear-filters-btn')?.addEventListener('click', () => {
             document.getElementById('search-input').value = '';
@@ -959,7 +875,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             applyFiltersAndRender();
         });
 
-        // Listener para mudança de data no input principal
         const dateInput = document.getElementById('reportDate');
         if(dateInput) {
             if(!dateInput.value) {
@@ -967,7 +882,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             
             dateInput.addEventListener('change', () => {
-                fetchDataPanels(); // Recarrega todos os painéis quando a data muda
+                fetchDataPanels(); 
             });
         }
     }
@@ -1057,11 +972,27 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.location.reload();
         });
 
+        // --- EXCLUSÃO DE TURMA COM SWEETALERT2 ---
         document.getElementById('deleteClassBtn').addEventListener('click', async () => {
-              if(confirm('Tem certeza?')) {
-                  await apiCall(`/api/classes/${state.activeClassId}`, 'DELETE');
-                 localStorage.setItem('selectedClassId', 'null');
-                 window.location.reload();
+             const result = await Swal.fire({
+                 title: 'Excluir Turma?',
+                 text: "Você tem certeza? Isso não pode ser desfeito.",
+                 icon: 'warning',
+                 showCancelButton: true,
+                 confirmButtonColor: '#d33',
+                 cancelButtonColor: '#6b7280',
+                 confirmButtonText: 'Sim, excluir',
+                 cancelButtonText: 'Cancelar'
+             });
+
+             if(result.isConfirmed) {
+                  try {
+                      await apiCall(`/api/classes/${state.activeClassId}`, 'DELETE');
+                      localStorage.setItem('selectedClassId', 'null');
+                      window.location.reload();
+                  } catch (err) {
+                      Swal.fire('Erro', err.message, 'error');
+                  }
              }
         });
 
@@ -1072,11 +1003,30 @@ document.addEventListener('DOMContentLoaded', async () => {
             populateShareModal();
         });
 
+        // --- REMOVER PROFESSOR COM SWEETALERT2 ---
         document.getElementById('currentClassMembers').addEventListener('click', async (e) => {
             const btn = e.target.closest('.remove-member-btn');
-            if(btn && confirm('Remover professor?')) {
-                await apiCall(`/api/classes/${state.activeClassId}/remove-member/${btn.dataset.pid}`, 'DELETE');
-                populateShareModal();
+            if(btn) {
+                const result = await Swal.fire({
+                    title: 'Remover Professor?',
+                    text: "Este professor deixará de ter acesso à turma.",
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonColor: '#d33',
+                    cancelButtonColor: '#6b7280',
+                    confirmButtonText: 'Sim, remover',
+                    cancelButtonText: 'Cancelar'
+                });
+
+                if (result.isConfirmed) {
+                    try {
+                        await apiCall(`/api/classes/${state.activeClassId}/remove-member/${btn.dataset.pid}`, 'DELETE');
+                        populateShareModal();
+                        Swal.fire('Removido', 'O professor foi removido.', 'success');
+                    } catch (err) {
+                         Swal.fire('Erro', err.message, 'error');
+                    }
+                }
             }
         });
 
@@ -1089,14 +1039,64 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             const editBtn = e.target.closest('.btn-edit-student');
             if(editBtn) openEditStudentModal(JSON.parse(editBtn.dataset.student));
+            
+            // --- EXCLUSÃO DE ALUNO COM SWEETALERT2 ---
+            const deleteBtn = e.target.closest('.btn-delete-student');
+            if (deleteBtn) {
+                const result = await Swal.fire({
+                    title: 'Excluir Aluno Permanentemente?',
+                    text: "Essa ação removerá o aluno e todo o histórico do sistema. Não pode ser desfeito!",
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#d33', // Vermelho forte
+                    cancelButtonColor: '#6b7280',
+                    confirmButtonText: 'Sim, excluir!',
+                    cancelButtonText: 'Cancelar'
+                });
+
+                if (result.isConfirmed) {
+                    try {
+                        await apiCall(`/api/students/${deleteBtn.dataset.sid}`, 'DELETE');
+                        
+                        // Remove do estado local para atualização rápida
+                        state.allStudents = state.allStudents.filter(s => s.id != deleteBtn.dataset.sid);
+                        state.studentsInClass = state.studentsInClass.filter(s => s.id != deleteBtn.dataset.sid);
+                        
+                        renderAllStudents();
+                        renderStudentsInClass();
+                        Swal.fire('Excluído!', 'O aluno foi removido do sistema.', 'success');
+                    } catch (err) {
+                        Swal.fire('Erro', err.message, 'error');
+                    }
+                }
+            }
         });
 
+        // --- REMOVER ALUNO DA TURMA COM SWEETALERT2 ---
         document.getElementById('students-in-class-list').addEventListener('click', async (e) => {
             const btn = e.target.closest('.btn-remove-student');
-            if(btn && confirm('Remover aluno desta turma?')) {
-                await apiCall(`/api/classes/${state.activeClassId}/remove-student/${btn.dataset.sid}`, 'DELETE');
-                await fetchStudentsInClass(state.activeClassId);
-                renderStudentsInClass(); renderAllStudents();
+            if(btn) {
+                const result = await Swal.fire({
+                    title: 'Remover Aluno da Turma?',
+                    text: "O aluno será desvinculado desta turma, mas continuará no sistema.",
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonColor: '#f59e0b', // Laranja
+                    cancelButtonColor: '#6b7280',
+                    confirmButtonText: 'Sim, remover',
+                    cancelButtonText: 'Cancelar'
+                });
+
+                if (result.isConfirmed) {
+                    try {
+                        await apiCall(`/api/classes/${state.activeClassId}/remove-student/${btn.dataset.sid}`, 'DELETE');
+                        await fetchStudentsInClass(state.activeClassId);
+                        renderStudentsInClass(); renderAllStudents();
+                        Swal.fire('Removido', 'Aluno removido da turma.', 'success');
+                    } catch(err) {
+                         Swal.fire('Erro', err.message, 'error');
+                    }
+                }
             }
         });
 

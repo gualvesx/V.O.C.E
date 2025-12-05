@@ -256,6 +256,28 @@ router.post('/students/:studentId/edit', requireLogin, async (req, res) => {
     }
 });
 
+// --- NOVA ROTA: Remover Aluno (Sistema) ---
+router.delete('/students/:studentId', requireLogin, async (req, res) => {
+    const { studentId } = req.params;
+
+    try {
+        // Remove o aluno (se houver restrição de FK sem cascade no banco, pode dar erro se tiver logs)
+        // O ideal é que as FKs tenham ON DELETE CASCADE ou SET NULL.
+        // Se der erro, assumiremos que é necessário limpar dependências antes (o que exigiria outra lógica),
+        // mas na maioria dos casos simples, o delete funciona.
+        const [result] = await pool.query('DELETE FROM students WHERE id = ?', [studentId]);
+        
+        if (result.affectedRows > 0) {
+            res.json({ success: true, message: 'Aluno removido com sucesso!' });
+        } else {
+            res.status(404).json({ error: 'Aluno não encontrado.' });
+        }
+    } catch (error) {
+        console.error('Erro ao remover aluno:', error);
+        res.status(500).json({ error: 'Erro interno ao remover aluno (verifique se há logs vinculados).' });
+    }
+});
+
 // Listar todos os alunos
 router.get('/students/all', requireLogin, async (req, res) => {
     try {
