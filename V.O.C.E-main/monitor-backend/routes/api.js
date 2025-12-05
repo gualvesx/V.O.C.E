@@ -46,7 +46,6 @@ router.post('/override-category', requireLogin, async (req, res) => {
         const [result] = await pool.query(sql, values);
 
         if (result.affectedRows > 0 || result.warningStatus === 0) {
-             // Tenta salvar feedback para treino futuro (opcional, não bloqueante)
              try {
                 appendTrainingData(url, newCategory.trim());
              } catch (err) {
@@ -209,16 +208,22 @@ router.get('/classes/:classId/members', requireLogin, async (req, res) => {
 
 // --- Gestão de Alunos ---
 
-// Criar Aluno
+// Criar Aluno (VINCULADO AO PROFESSOR)
 router.post('/students', requireLogin, async (req, res) => {
     const { fullName, cpf, pc_id } = req.body;
+    const professorId = req.session.professorId; // ID do professor logado
+
     if (!fullName || fullName.trim() === '') return res.status(400).json({ error: 'Nome do aluno é obrigatório.' });
 
     const cleanCpf = cpf ? cpf.trim() : null;
     const cleanPcId = pc_id ? pc_id.trim() : null;
 
     try {
-        const [result] = await pool.query('INSERT INTO students (full_name, cpf, pc_id) VALUES (?, ?, ?)', [fullName.trim(), cleanCpf || null, cleanPcId || null]);
+        // Agora salvamos o created_by
+        const [result] = await pool.query(
+            'INSERT INTO students (full_name, cpf, pc_id, created_by) VALUES (?, ?, ?, ?)', 
+            [fullName.trim(), cleanCpf || null, cleanPcId || null, professorId]
+        );
         res.status(201).json({ success: true, student: { id: result.insertId, full_name: fullName.trim(), cpf: cleanCpf, pc_id: cleanPcId } });
     } catch (error) {
         console.error('Erro ao criar aluno:', error);
@@ -229,10 +234,11 @@ router.post('/students', requireLogin, async (req, res) => {
     }
 });
 
-// Editar Aluno
+// Editar Aluno (COM VERIFICAÇÃO DE PROPRIEDADE)
 router.post('/students/:studentId/edit', requireLogin, async (req, res) => {
     const { studentId } = req.params;
     const { fullName, cpf, pc_id } = req.body;
+    const professorId = req.session.professorId;
 
     if (!fullName || fullName.trim() === '') {
         return res.status(400).json({ error: 'Nome do aluno é obrigatório.' });
@@ -242,6 +248,14 @@ router.post('/students/:studentId/edit', requireLogin, async (req, res) => {
     const cleanPcId = pc_id ? pc_id.trim() : null;
 
     try {
+        // Verifica se o aluno pertence ao professor logado
+        const [checkOwner] = await pool.query('SELECT id FROM students WHERE id = ? AND created_by = ?', [studentId, professorId]);
+        
+        // Se não encontrar, ou o aluno não existe ou pertence a outro professor
+        if (checkOwner.length === 0) {
+            return res.status(403).json({ error: 'Você não tem permissão para editar este aluno ou ele não existe.' });
+        }
+
         await pool.query(
             'UPDATE students SET full_name = ?, cpf = ?, pc_id = ? WHERE id = ?', 
             [fullName.trim(), cleanCpf || null, cleanPcId || null, studentId]
@@ -256,21 +270,20 @@ router.post('/students/:studentId/edit', requireLogin, async (req, res) => {
     }
 });
 
-// --- NOVA ROTA: Remover Aluno (Sistema) ---
+// Remover Aluno (Sistema) (COM VERIFICAÇÃO DE PROPRIEDADE)
 router.delete('/students/:studentId', requireLogin, async (req, res) => {
     const { studentId } = req.params;
+    const professorId = req.session.professorId;
 
     try {
-        // Remove o aluno (se houver restrição de FK sem cascade no banco, pode dar erro se tiver logs)
-        // O ideal é que as FKs tenham ON DELETE CASCADE ou SET NULL.
-        // Se der erro, assumiremos que é necessário limpar dependências antes (o que exigiria outra lógica),
-        // mas na maioria dos casos simples, o delete funciona.
-        const [result] = await pool.query('DELETE FROM students WHERE id = ?', [studentId]);
+        // Verifica propriedade e deleta em uma única verificação se possível, mas aqui faremos em duas para clareza
+        const [result] = await pool.query('DELETE FROM students WHERE id = ? AND created_by = ?', [studentId, professorId]);
         
         if (result.affectedRows > 0) {
             res.json({ success: true, message: 'Aluno removido com sucesso!' });
         } else {
-            res.status(404).json({ error: 'Aluno não encontrado.' });
+            // Se não deletou nada, ou não existe ou não é dono
+            res.status(403).json({ error: 'Você não tem permissão para remover este aluno ou ele não existe.' });
         }
     } catch (error) {
         console.error('Erro ao remover aluno:', error);
@@ -278,21 +291,25 @@ router.delete('/students/:studentId', requireLogin, async (req, res) => {
     }
 });
 
-// Listar todos os alunos
+// Listar alunos (APENAS DO PROFESSOR LOGADO)
 router.get('/students/all', requireLogin, async (req, res) => {
     try {
-        const [students] = await pool.query('SELECT * FROM students ORDER BY full_name');
+        const professorId = req.session.professorId;
+        // Filtra pelo ID do professor
+        const [students] = await pool.query('SELECT * FROM students WHERE created_by = ? ORDER BY full_name', [professorId]);
         res.json(students);
     } catch (error) {
-        console.error('Erro ao buscar todos os alunos:', error);
+        console.error('Erro ao buscar alunos:', error);
         res.status(500).json({ error: 'Erro interno ao buscar alunos.' });
     }
 });
 
-// Listar alunos da turma
+// Listar alunos da turma (AQUI É MANTIDO O ACESSO COMPARTILHADO)
+// Se eu compartilho a turma com outro professor, ele deve ver os alunos daquela turma, mesmo que não os tenha criado.
 router.get('/classes/:classId/students', requireLogin, async (req, res) => {
     try {
         const { classId } = req.params;
+        // Verifica se o professor é membro da turma (dono ou convidado)
         const [isMember] = await pool.query('SELECT 1 FROM class_members WHERE class_id = ? AND professor_id = ?', [classId, req.session.professorId]);
         if (isMember.length === 0) return res.status(403).json({ error: 'Você não tem permissão para ver os alunos desta turma.' });
 
@@ -433,7 +450,7 @@ router.get('/data', requireLogin, async (req, res) => {
             return { ...log, categoria: finalCategory };
         });
 
-        // 3. Calcular Alertas (CORRIGIDO: Lógica mais ampla)
+        // 3. Calcular Alertas
         const redAlerts = new Set();
         const blueAlerts = new Set();
         const forbiddenCategories = ['Rede Social', 'Streaming & Jogos', 'Streaming', 'Jogos', 'Loja Digital', 'Anime'];
@@ -497,7 +514,6 @@ router.get('/alerts/:alunoId/:type', requireLogin, async (req, res) => {
     }
 
     try {
-        // A cláusula IN (?) funciona corretamente com mysql2 se passarmos o array encapsulado
         const [logs] = await pool.query(
             'SELECT * FROM logs WHERE aluno_id = ? AND categoria IN (?) AND DATE(timestamp) = ? ORDER BY timestamp DESC',
             [alunoId, categories, targetDate]
@@ -514,11 +530,8 @@ router.get('/alerts/:alunoId/:type', requireLogin, async (req, res) => {
 //      FUNÇÃO AUXILIAR: REGISTRAR APRENDIZADO (FEEDBACK)
 // ================================================================
 function appendTrainingData(url, category) {
-    // Caminho para um arquivo CSV que servirá de dataset futuro
     const trainingFile = path.join(__dirname, '..', 'classifier-tf', 'ai_training_feedback.csv');
     const hostname = extractHostname(url) || url;
-    
-    // Formato: hostname, categoria_correta
     const csvLine = `${hostname},${category}\n`;
     
     fs.appendFile(trainingFile, csvLine, (err) => {
@@ -527,204 +540,269 @@ function appendTrainingData(url, category) {
     });
 }
 
+
+
 // ================================================================
-//      RELATÓRIO PDF (CONTRASTE INTELIGENTE)
+//      RELATÓRIO PDF (CORRIGIDO: ALINHAMENTO E CATEGORIA OUTROS)
 // ================================================================
 router.get('/download-report/:date', requireLogin, async (req, res) => {
+    const professorId = req.session.professorId;
+    
     try {
         const dateStr = req.params.date;
-        const requestedDate = new Date(dateStr + 'T00:00:00');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return res.status(400).send('Formato de data inválido.');
 
-        if (isNaN(requestedDate.getTime())) return res.status(400).send('Data inválida.');
+        // 1. BUSCA ALUNOS
+        const [students] = await pool.query(
+            'SELECT full_name, cpf, pc_id FROM students WHERE created_by = ?', 
+            [professorId]
+        );
 
-        // 1. Busca Dados
-        const [students] = await pool.query('SELECT full_name, cpf, pc_id FROM students');
+        // Mapa normalizado (lowercase + trim)
         const studentNameMap = new Map();
+        const myStudentIds = new Set(); 
+        
         students.forEach(s => {
-            if (s.pc_id) studentNameMap.set(s.pc_id, s.full_name);
-            if (s.cpf) studentNameMap.set(s.cpf, s.full_name);
+            if (s.pc_id) {
+                const pid = String(s.pc_id).toLowerCase().trim();
+                studentNameMap.set(pid, s.full_name);
+                myStudentIds.add(pid);
+            }
+            if (s.cpf) {
+                const cid = String(s.cpf).toLowerCase().trim();
+                studentNameMap.set(cid, s.full_name);
+                myStudentIds.add(cid);
+            }
         });
 
-        // 2. Configuração
-        const IMPROPER_CATEGORIES = ['Rede Social', 'Streaming', 'Jogos', 'Streaming & Jogos', 'Loja Digital', 'Anime', 'Musica', 'Outros'];
+        // Fallback: Se não achou alunos vinculados, busca todos (segurança)
+        if (myStudentIds.size === 0) {
+            const [allStudents] = await pool.query('SELECT full_name, cpf, pc_id FROM students');
+            allStudents.forEach(s => {
+                if(s.pc_id) { const pid = String(s.pc_id).toLowerCase().trim(); studentNameMap.set(pid, s.full_name); myStudentIds.add(pid); }
+                if(s.cpf) { const cid = String(s.cpf).toLowerCase().trim(); studentNameMap.set(cid, s.full_name); myStudentIds.add(cid); }
+            });
+        }
+
+        // 2. CONFIGURAÇÃO DE CATEGORIAS
+        // REMOVIDO "Outros" DA LISTA DE INDEVIDOS
+        const IMPROPER_CATEGORIES = ['Rede Social', 'Streaming', 'Jogos', 'Streaming & Jogos', 'Loja Digital', 'Anime', 'Musica'];
+        
         const colors = { 
-            primary: '#B91C1C',    danger: '#DC2626',     success: '#16A34A', 
-            secondary: '#1F2937',  accent: '#F3F4F6',     text: '#374151', muted: '#9CA3AF'
+            primary: '#B91C1C', danger: '#DC2626', secondary: '#1F2937',  
+            accent: '#F3F4F6', text: '#374151', muted: '#6B7280'
         };
 
-        // 3. Coleta de Dados
-        const today = new Date(); today.setHours(0,0,0,0);
-        const requestedDateOnly = new Date(requestedDate);
+        // 3. COLETA DE DADOS
+        const requestDateObj = new Date(dateStr + 'T00:00:00');
+        const today = new Date();
+        const isToday = requestDateObj.toISOString().split('T')[0] === today.toISOString().split('T')[0];
+
         let aggregatedData = {};
         let dataSource = '';
         let foundData = false;
 
-        if (requestedDateOnly.getTime() === today.getTime()) {
+        if (isToday) {
             dataSource = 'Monitoramento em Tempo Real';
             const [logsResult] = await pool.query(
-                `SELECT aluno_id, url, categoria, SUM(duration) as total_duration, COUNT(*) as count 
-                 FROM logs WHERE DATE(timestamp) = ? GROUP BY aluno_id, url, categoria`, [dateStr]);
+                `SELECT aluno_id, url, categoria, SUM(duration) as total_duration 
+                 FROM logs 
+                 WHERE DATE(timestamp) = ? 
+                 GROUP BY aluno_id, url, categoria`, [dateStr]);
             
             if (logsResult.length > 0) {
-                 foundData = true;
                  logsResult.forEach(row => {
-                    if (!aggregatedData[row.aluno_id]) aggregatedData[row.aluno_id] = {};
-                    aggregatedData[row.aluno_id][row.url] = { total_duration: row.total_duration, count: row.count, category: row.categoria };
+                    if (!row.aluno_id) return;
+                    const logId = String(row.aluno_id).toLowerCase().trim();
+
+                    if (myStudentIds.has(logId)) {
+                        foundData = true;
+                        if (!aggregatedData[logId]) aggregatedData[logId] = {};
+                        if (!aggregatedData[logId][row.url]) {
+                            aggregatedData[logId][row.url] = { total_duration: 0, category: row.categoria };
+                        }
+                        aggregatedData[logId][row.url].total_duration += Number(row.total_duration);
+                    }
                  });
             }
         } else {
             dataSource = 'Histórico Arquivado';
             const [rows] = await pool.query('SELECT aluno_id, daily_logs FROM old_logs WHERE archive_date = ?', [dateStr]);
             if (rows.length > 0) {
-                foundData = true;
                 rows.forEach(row => {
-                    try { aggregatedData[row.aluno_id] = typeof row.daily_logs === 'string' ? JSON.parse(row.daily_logs) : row.daily_logs; } catch (e) {}
+                    const logId = String(row.aluno_id).toLowerCase().trim();
+                    if (myStudentIds.has(logId)) {
+                        foundData = true;
+                        try { 
+                            aggregatedData[logId] = typeof row.daily_logs === 'string' ? JSON.parse(row.daily_logs) : row.daily_logs; 
+                        } catch (e) {}
+                    }
                 });
             }
         }
 
-        if (!foundData) return res.status(404).send(`Nenhum dado encontrado para ${dateStr}.`);
+        if (!foundData) return res.status(404).send(`Nenhum dado encontrado para a data ${dateStr}.`);
 
         // --- GERAÇÃO DO PDF ---
         const doc = new PDFDocument({ margin: 40, size: 'A4' });
-        const filename = `Relatorio_VOCE_${dateStr}.pdf`;
+        const filename = `Relatorio_${dateStr}.pdf`;
 
         res.setHeader('Content-disposition', `attachment; filename="${filename}"`);
         res.setHeader('Content-type', 'application/pdf');
         doc.pipe(res);
 
-        const drawHeader = () => {
-            doc.rect(0, 0, 595.28, 80).fill(colors.primary);
-            doc.fillColor('#FFFFFF').fontSize(24).font('Helvetica-Bold').text('Relatório de Monitoramento', 40, 25);
-            doc.fontSize(10).font('Helvetica').text(`Gerado via V.O.C.E | ${dataSource}`, 40, 55);
-            doc.fontSize(14).text(requestedDate.toLocaleDateString('pt-BR'), 450, 25, { align: 'right' });
-            doc.moveDown(4);
+        // Fontes
+        const fontRegular = path.join(__dirname, '../public/fonts/Roboto-Regular.ttf');
+        const fontBold = path.join(__dirname, '../public/fonts/Roboto-Bold.ttf');
+        let hasCustomFont = fs.existsSync(fontRegular) && fs.existsSync(fontBold);
+
+        if (hasCustomFont) {
+            doc.registerFont('Regular', fontRegular);
+            doc.registerFont('Bold', fontBold);
+        }
+
+        const cleanText = (text) => hasCustomFont ? (text || "") : (text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const setFont = (type = 'Regular', size = 10) => {
+            if (hasCustomFont) doc.font(type).fontSize(size);
+            else doc.font(type === 'Bold' ? 'Helvetica-Bold' : 'Helvetica').fontSize(size);
         };
 
-        const formatMinutes = (s) => `${(s/60).toFixed(1)} min`;
+        const formatDuration = (seconds) => {
+            if (!seconds || seconds <= 0) return "0s";
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = Math.floor(seconds % 60);
+            if (h > 0) return `${h}h ${m}m`;
+            if (m > 0) return `${m}m ${s}s`;
+            return `${s}s`;
+        };
+
+        const truncate = (str, len) => (str && str.length > len) ? str.substring(0, len-3) + "..." : (str || "-");
+
+        // --- HEADER ---
+        const drawHeader = () => {
+            doc.rect(0, 0, 595.28, 90).fill(colors.primary);
+            doc.fillColor('#FFFFFF');
+            setFont('Bold', 24);
+            doc.text(cleanText('Relatório de Monitoramento'), 40, 25);
+            setFont('Regular', 11);
+            doc.text(cleanText(`Professor: ${req.session.professorName || 'Docente'} | ${dataSource}`), 40, 60);
+            doc.fontSize(14).text(requestDateObj.toLocaleDateString('pt-BR'), 450, 25, { align: 'right' });
+            doc.moveDown(5);
+        };
 
         drawHeader();
 
-        // --- Resumo Geral ---
+        // --- TOTAIS ---
         let totalStudents = Object.keys(aggregatedData).length;
         let grandTotalTime = 0, grandImproperTime = 0;
-        let topSiteOverall = { url: '-', duration: 0 };
-        let siteMapGlobal = {};
-
+        
         for (const uid in aggregatedData) {
             for (const url in aggregatedData[uid]) {
                 const item = aggregatedData[uid][url];
-                grandTotalTime += item.total_duration;
-                if (IMPROPER_CATEGORIES.includes(item.category)) grandImproperTime += item.total_duration;
-                siteMapGlobal[url] = (siteMapGlobal[url] || 0) + item.total_duration;
-                if (siteMapGlobal[url] > topSiteOverall.duration) topSiteOverall = { url: url, duration: siteMapGlobal[url] };
+                const dur = Number(item.total_duration) || 0;
+                grandTotalTime += dur;
+                if (IMPROPER_CATEGORIES.includes(item.category)) grandImproperTime += dur;
             }
         }
 
-        doc.fillColor(colors.secondary).fontSize(16).font('Helvetica-Bold').text('Resumo da Turma');
-        doc.moveDown(0.5);
-        const summaryY = doc.y;
+        // --- CARDS ---
+        const summaryY = 110;
+        const cardW = 120;
+        const cardH = 60;
         
-        const drawCard = (x, title, value, valColor=colors.primary, note='') => {
-            doc.roundedRect(x, summaryY, 120, 60, 5).fill(colors.accent);
-            if(note) doc.roundedRect(x, summaryY, 120, 60, 5).fill('#FEF2F2');
-            doc.fillColor(valColor).fontSize(16).text(value, x+10, summaryY+15, {width: 100, align:'center'});
-            doc.fillColor(colors.text).fontSize(8).font('Helvetica').text(title, x+10, summaryY+40, {width: 100, align:'center'});
+        const drawCard = (x, title, value, color) => {
+            doc.roundedRect(x, summaryY, cardW, cardH, 4).fill(colors.accent);
+            doc.fillColor(color);
+            setFont('Bold', 14);
+            doc.text(value, x, summaryY + 15, {width: cardW, align:'center'});
+            doc.fillColor(colors.text);
+            setFont('Regular', 9);
+            doc.text(cleanText(title), x, summaryY + 38, {width: cardW, align:'center'});
         };
 
-        drawCard(40, 'Alunos Ativos', totalStudents);
-        drawCard(170, 'Tempo Total', formatMinutes(grandTotalTime), colors.secondary);
-        drawCard(300, 'Tempo em Distração', formatMinutes(grandImproperTime), colors.danger, true);
-        drawCard(430, 'Site Mais Acessado', topSiteOverall.url.substring(0,18), colors.secondary);
+        drawCard(40, 'Alunos Ativos', totalStudents, colors.secondary);
+        drawCard(170, 'Tempo Total', formatDuration(grandTotalTime), colors.secondary);
+        drawCard(300, 'Tempo Indevido', formatDuration(grandImproperTime), colors.danger);
+        
+        let focusPercent = grandTotalTime > 0 ? ((1 - (grandImproperTime/grandTotalTime)) * 100).toFixed(0) : 100;
+        drawCard(430, 'Nível de Foco', `${focusPercent}%`, focusPercent < 70 ? colors.danger : '#16A34A');
 
-        doc.moveDown(5);
+        doc.y = summaryY + cardH + 40;
 
-        // --- Detalhes por Aluno ---
+        // --- DETALHES ---
         for (const alunoId in aggregatedData) {
             const displayName = studentNameMap.get(alunoId) || `ID: ${alunoId}`;
             const userLogs = aggregatedData[alunoId];
             
-            if (doc.y > 650) { doc.addPage(); drawHeader(); }
+            if (doc.y > 700) { doc.addPage(); drawHeader(); doc.y = 110; }
 
+            // Nome do Aluno
             doc.rect(40, doc.y, 515, 25).fill('#E5E7EB');
-            doc.fillColor(colors.secondary).fontSize(12).font('Helvetica-Bold').text(displayName, 50, doc.y - 18);
+            doc.fillColor(colors.secondary);
+            setFont('Bold', 12);
+            doc.text(cleanText(displayName), 50, doc.y - 18);
+            doc.y += 10;
+
+            const sortedSites = Object.entries(userLogs)
+                .map(([url, data]) => ({ url, ...data }))
+                .sort((a, b) => b.total_duration - a.total_duration);
+
+            // CORREÇÃO DOS TÍTULOS DA TABELA
+            const col1 = 40;
+            const col2 = 320; // Afastei um pouco a coluna
+            const col3 = 480;
+            
+            doc.fillColor(colors.muted);
+            setFont('Bold', 9);
+
+            // SALVA A POSIÇÃO Y ATUAL PARA USAR EM TODOS OS TÍTULOS
+            const headerY = doc.y; 
+
+            doc.text('SITE / APLICAÇÃO', col1, headerY);
+            doc.text('CATEGORIA', col2, headerY);
+            doc.text('TEMPO', col3, headerY);
+            
+            // Move para baixo APÓS escrever todos os títulos
+            doc.moveDown(0.5);
+            
+            // Linha divisória
+            doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeColor('#D1D5DB').lineWidth(1).stroke();
             doc.moveDown(0.5);
 
-            const sortedSites = Object.entries(userLogs).map(([url, data]) => ({ url, ...data })).sort((a, b) => b.total_duration - a.total_duration);
-            const top5 = sortedSites.slice(0, 5);
-            const maxDuration = top5.length > 0 ? top5[0].total_duration : 1;
-            const startY = doc.y;
-
-            doc.fontSize(9).font('Helvetica-Bold').fillColor(colors.text).text('Top 5 Sites (Visual)', 40, startY);
-            
-            // --- GRÁFICO INTELIGENTE ---
-            let currentBarY = startY + 15;
-            const chartWidth = 200;
-            const barHeight = 15;
-
-            top5.forEach((site) => {
-                const barW = (site.total_duration / maxDuration) * chartWidth;
+            setFont('Regular', 10);
+            sortedSites.slice(0, 10).forEach((site, index) => {
+                const rowY = doc.y;
                 const isImproper = IMPROPER_CATEGORIES.includes(site.category);
-                const barColor = isImproper ? colors.danger : colors.secondary;
                 
-                // Fundo da barra
-                doc.rect(40, currentBarY, chartWidth, barHeight).fill('#F3F4F6');
-                // Barra de valor
-                doc.rect(40, currentBarY, Math.max(barW, 2), barHeight).fill(barColor);
-                
-                // Texto do Site
-                const urlText = site.url.substring(0, 28);
-                const textWidth = doc.widthOfString(urlText);
-                
-                // LÓGICA DE CONTRASTE:
-                // Se a barra for maior que o texto + margem, escreve DENTRO em BRANCO
-                // Se não, escreve FORA em CINZA ESCURO
-                if (barW > textWidth + 10) {
-                    doc.fillColor('#FFFFFF').text(urlText, 45, currentBarY + 3);
-                } else {
-                    // Escreve logo após a barra
-                    doc.fillColor(colors.text).text(urlText, 45 + Math.max(barW, 2) + 5, currentBarY + 3);
-                }
+                // Zebra
+                if (index % 2 === 0) doc.rect(40, rowY - 2, 515, 14).fill('#F9FAFB');
 
-                // Tempo (Fixo à direita)
-                doc.fillColor(colors.muted).text(formatMinutes(site.total_duration), 40 + chartWidth + 10, currentBarY + 3);
+                // Col 1: Site
+                if (isImproper) doc.fillColor(colors.danger); else doc.fillColor(colors.text);
+                doc.text(truncate(cleanText(site.url), 45), col1, rowY, { width: 270, lineBreak: false });
+
+                // Col 2: Categoria
+                doc.fillColor(colors.muted);
+                doc.text(truncate(cleanText(site.category || 'Geral'), 20), col2, rowY);
+
+                // Col 3: Tempo
+                doc.fillColor(colors.secondary);
+                doc.text(formatDuration(site.total_duration), col3, rowY);
                 
-                currentBarY += 23;
+                doc.moveDown(0.6);
             });
 
-            // --- TABELA ---
-            const tableX = 320;
-            const tableY = startY + 15;
-            doc.fontSize(8).font('Helvetica-Bold').fillColor(colors.text);
-            doc.text('Site', tableX, startY);
-            doc.text('Categoria', tableX + 110, startY);
-            doc.text('Tempo', tableX + 190, startY);
-
-            let rowY = tableY;
-            sortedSites.slice(0, 10).forEach((site, i) => {
-                const isImproper = IMPROPER_CATEGORIES.includes(site.category);
-                if (i % 2 === 0) doc.rect(tableX - 2, rowY - 2, 235, 12).fill('#FAFAFA');
-                
-                if (isImproper) doc.fillColor(colors.danger).font('Helvetica-Bold');
-                else doc.fillColor(colors.text).font('Helvetica');
-
-                doc.fontSize(8);
-                doc.text(site.url.substring(0, 20), tableX, rowY);
-                doc.text((site.category||'Geral').substring(0, 12), tableX + 110, rowY);
-                doc.text(formatMinutes(site.total_duration), tableX + 190, rowY);
-                rowY += 12;
-            });
-
-            const sectionHeight = Math.max((top5.length * 23) + 20, (sortedSites.slice(0,10).length * 12) + 20);
-            doc.y = startY + sectionHeight + 10;
-            doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeColor('#E5E7EB').stroke();
-            doc.moveDown(1);
+            doc.moveDown(1.5);
         }
 
+        // Numeração de páginas
         const range = doc.bufferedPageRange();
         for (let i = range.start; i < range.start + range.count; i++) {
             doc.switchToPage(i);
-            doc.fontSize(8).fillColor(colors.muted).text(`Página ${i + 1} de ${range.count}`, 0, doc.page.height - 30, { align: 'center' });
+            setFont('Regular', 8);
+            doc.fillColor(colors.muted);
+            doc.text(`Página ${i + 1} de ${range.count}`, 0, doc.page.height - 30, { align: 'center' });
         }
 
         doc.end();
