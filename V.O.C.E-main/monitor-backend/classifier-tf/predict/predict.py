@@ -21,7 +21,7 @@ url_to_classify = sys.argv[1]
 X_data = vectorizer.transform([url_to_classify])
 
 # Predição
-predicted_index = model.predict(X_data)[0]
+predicted_index = model.predict(input_word)
 category = label_encoder.inverse_transform([predicted_index])[0]
 
 print(category)
