@@ -88,3 +88,11 @@ pip3 install -r requirements.txt
 
 # Configurar o arquivo .env (copie o .env.example)
 # Preencha as credenciais do MySQL
+
+.env:DB_HOST=localhost
+DB_USER=root
+DB_PASSWORD=
+DB_DATABASE=v_o_c_e
+DB_PORT=3306
+EMAIL_USER=vocetcc@gmail.com
+EMAIL_PASS=pymrbrivhjktcnyg
